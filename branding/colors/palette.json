@@ -1,0 +1,18 @@
+{
+  "theme": "Dark Security First",
+  "colors": {
+    "background": "#0a0f1d",
+    "surface": "#111827",
+    "card": "#1f2937",
+    "border": "#374151",
+    "primary": "#3b82f6",
+    "secondary": "#10b981",
+    "warning": "#f59e0b",
+    "danger": "#ef4444",
+    "text": {
+      "primary": "#f9fafb",
+      "secondary": "#9ca3af",
+      "muted": "#6b7280"
+    }
+  }
+}

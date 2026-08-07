@@ -1,0 +1,30 @@
+# CyberShield AI Backend Dependencies
+
+Flask==3.0.0
+Flask-CORS==4.0.0
+python-dotenv==1.0.0
+gunicorn==21.2.0
+
+# Database
+supabase==2.3.0
+postgrest==0.13.0
+
+# Machine Learning & Data Processing
+scikit-learn==1.3.2
+pandas==2.1.4
+numpy==1.26.2
+joblib==1.3.2
+
+# PDF Report Generation
+reportlab==4.0.8
+
+# Security & Password Hashing
+bcrypt==4.1.2
+PyJWT==2.8.0
+
+# HTTP & Web Scraping/Scanning
+requests==2.31.0
+beautifulsoup4==4.12.2
+
+# Testing
+pytest==7.4.3
