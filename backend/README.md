@@ -73,12 +73,16 @@ All tests are deterministic and do not require Supabase or ML models.
 
 ## Implemented Endpoints
 
+Authentication is delegated to Supabase Auth, which React calls directly
+(`/auth/v1/signup`, `/auth/v1/token`, `/auth/v1/logout`, `/auth/v1/user`).
+Flask does not implement login/register routes; every protected endpoint below
+requires a valid Supabase access JWT in the `Authorization` header, which Flask
+verifies and resolves to the authenticated user ID (`auth.uid()`).
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/health` | Service liveness and dependency status |
 | GET | `/api/version` | Backend + API version information |
-| POST | `/api/auth/register` | Validated registration (501 until Supabase phase) |
-| POST | `/api/auth/login` | Validated login (501 until Supabase phase) |
 | POST | `/api/scanner/website` | Passive website security scan |
 | POST | `/api/email/analyze` | Phishing detection (deterministic placeholder) |
 | POST | `/api/password/analyze` | Password strength analysis |
@@ -124,5 +128,6 @@ Waiting for ML phase: phishing email classification and log anomaly detection
 will swap the deterministic placeholders for trained models without changing
 the API contract.
 
-Waiting for Supabase phase: user registration/login, report persistence, and
-scan history.
+Waiting for Supabase phase: report persistence, scan history, and profile
+data. User authentication is already delegated to Supabase Auth; Flask only
+verifies Supabase access JWTs on protected endpoints.

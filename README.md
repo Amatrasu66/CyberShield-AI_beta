@@ -22,17 +22,23 @@ CyberShield AI is a modern, modular cybersecurity platform designed to combine w
 ## 🏗️ Architecture & Tech Stack
 
 ```text
-React + TypeScript (Vercel)
-         │
-     REST API
-         │
-   Flask (Render)
-   ┌─────┴────────┐
-Supabase     ML Models (.pkl)
+             React + TypeScript (Vercel)
+                 │              │
+   (Supabase Auth)      (REST API + JWT)
+                 │              │
+                 ▼              ▼
+        Supabase Auth       Flask (Render)
+                 │              │
+                 └──────┬───────┘
+                Supabase (PostgreSQL)
+                      │
+             ML Models (.pkl)
 ```
 
 - **Frontend**: React, TypeScript, Vite, Tailwind CSS, Chart.js
-- **Backend**: Python, Flask, Flask-CORS, ReportLab
+- **Backend**: Python, Flask, Flask-CORS, PyJWT, bcrypt, cryptography, requests, python-dotenv, gunicorn
+- **Authentication**: Supabase Auth (`auth.users`) — React signs up / signs in / signs out directly; Flask verifies the Supabase access JWT
+- **Application user data**: `public.profiles` linked 1:1 to `auth.users.id`
 - **Machine Learning**: Scikit-learn, Pandas, NumPy, Joblib
 - **Database**: Supabase (PostgreSQL)
 - **Deployment**: Vercel (Frontend), Render (Backend)
@@ -67,7 +73,7 @@ CyberShield-AI/
 
 1. **Clone the Repository**:
    ```bash
-   git clone https://github.com/your-org/CyberShield-AI.git
+   git clone https://github.com/Amatrasu66/CyberShield-AI_beta.git
    cd CyberShield-AI
    ```
 
