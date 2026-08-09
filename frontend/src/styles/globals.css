@@ -1,11 +1,17 @@
-@tailwindcss base;
-@tailwindcss components;
-@tailwindcss utilities;
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 
-/* CyberShield AI Global Styles - Placeholder */
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-  background-color: #0a0f1d;
-  color: #f3f4f6;
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body { @apply m-0 min-w-[320px] bg-background font-body text-on-surface antialiased; }
+  * { @apply border-outline-variant; }
+  button, input, textarea, select { font: inherit; }
+}
+
+@layer components {
+  .panel { @apply rounded-lg border bg-surface-container; }
+  .eyebrow { @apply font-mono text-xs font-medium uppercase tracking-[0.16em] text-on-surface-variant; }
+  .grid-glow { background-image: linear-gradient(to right, rgb(192 193 255 / 0.035) 1px, transparent 1px), linear-gradient(to bottom, rgb(192 193 255 / 0.035) 1px, transparent 1px); background-size: 32px 32px; }
 }

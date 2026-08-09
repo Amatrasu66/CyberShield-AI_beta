@@ -1,14 +1,22 @@
 """
-CyberShield AI - Main Flask Application Entry Point (Placeholder)
+CyberShield AI - Flask application entry point.
 
-This module initializes the Flask app, registers blueprints, applies middleware,
-and starts the development server. Business logic and active endpoints will be implemented in future phases.
+Loads environment variables, creates the app via the application factory, and
+starts the development server.
+
+Run locally:
+    python app.py
 """
+
+from dotenv import load_dotenv
 
 from app import create_app
 
+load_dotenv()
+
 app = create_app()
 
-if __name__ == '__main__':
-    # Run development server
-    app.run(host='0.0.0.0', port=5000, debug=True)
+if __name__ == "__main__":
+    # The debug flag defaults to False; set FLASK_DEBUG=1 for hot reload.
+    debug = str(app.config.get("DEBUG", False)).lower() in {"1", "true", "yes", "on"}
+    app.run(host="0.0.0.0", port=int(app.config.get("PORT", 5000)), debug=debug)
