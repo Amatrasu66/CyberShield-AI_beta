@@ -87,9 +87,15 @@ class Config:
     CRYPTO_MAX_INPUT_LENGTH = _env_int("CRYPTO_MAX_INPUT_LENGTH", 100_000)
     URL_MAX_LENGTH = _env_int("URL_MAX_LENGTH", 2048)
 
-    # --- Future: Supabase (reserved, not used in this phase) -------------
+    # --- Supabase (PostgreSQL database) ------------------------------------
     SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+    # Legacy client key. Superseded by SUPABASE_ANON_KEY / SERVICE_ROLE_KEY.
     SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
+    # Public anon key for the default client (safe for frontend use).
+    SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", SUPABASE_KEY)
+    # Privileged service-role key for trusted server-side operations.
+    # NEVER expose this key to the frontend or in client-side code.
+    SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 
     # --- Future: ML model paths (reserved, not used in this phase) -------
     PHISHING_MODEL_PATH = os.environ.get("PHISHING_MODEL_PATH", "../models/phishing_model.pkl")
