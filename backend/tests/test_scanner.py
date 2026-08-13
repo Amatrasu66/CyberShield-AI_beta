@@ -229,7 +229,7 @@ class TestScannerPersistence:
             staticmethod(lambda url, cfg: _fetch_ok()),
         )
         monkeypatch.setattr(
-            "app.services.scanner_service.get_supabase_client", lambda: None
+            "app.services.scanner_service.get_user_supabase_client", lambda access_token=None: None
         )
         result = ScannerService.scan_website(
             "https://example.com", SCAN_CONFIG, user_id=self.USER_ID

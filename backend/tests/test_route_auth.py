@@ -4,6 +4,24 @@ import uuid
 
 import pytest
 
+from app.reports.storage import ReportStorageService
+
+
+@pytest.fixture(autouse=True)
+def _fake_report_storage(monkeypatch):
+    """Replace report storage I/O so report endpoints run without Supabase Storage."""
+    def fake_upload(pdf_file, user_id, report_id, config=None):
+        return {
+            "storage_path": f"{user_id}/{report_id}.pdf",
+            "signed_url": f"https://storage.example/{user_id}/{report_id}.pdf?token=abc",
+        }
+
+    def fake_signed_url(user_id, report_id, config=None):
+        return f"https://storage.example/{user_id}/{report_id}.pdf?token=abc"
+
+    monkeypatch.setattr(ReportStorageService, "upload_pdf", staticmethod(fake_upload))
+    monkeypatch.setattr(ReportStorageService, "get_signed_url", staticmethod(fake_signed_url))
+
 
 def _assert_unauthorized(response):
     assert response.status_code == 401
@@ -16,6 +34,7 @@ def _assert_unauthorized(response):
 
 class TestProtectedRoutesRequireAuth:
     @pytest.mark.parametrize("method,path,json", [
+        ("get", "/api/auth/me", None),
         ("post", "/api/scanner/website", {"url": "https://example.com"}),
         ("post", "/api/email/analyze", {"content": "hello"}),
         ("post", "/api/password/analyze", {"password": "CorrectHorseBatteryStaple!9"}),

@@ -124,7 +124,7 @@ class TestLogPersistence:
 
     def test_skips_persistence_when_client_unconfigured(self, monkeypatch):
         monkeypatch.setattr(
-            "app.services.log_service.get_supabase_client", lambda: None
+            "app.services.log_service.get_user_supabase_client", lambda access_token=None: None
         )
         result = LogService.analyze_logs(SAMPLE_LOG, user_id=self.USER_ID)
         assert result["anomalies_detected"] >= 6

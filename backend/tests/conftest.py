@@ -35,44 +35,104 @@ class _FakeSupabaseClient:
 
     def __init__(self):
         self.inserts = {}
+        self.rows = {}
         self.fail_next_execute = False
+        self.fail_inserts = False
+        self.auth_tokens = []
+
+    def track_auth(self, access_token=None):
+        """Record the access token forwarded to a user-scoped operation."""
+        self.auth_tokens.append(access_token)
+        return self
 
     def table(self, name):
         return _FakeSupabaseTable(name, self)
 
+    def seed(self, table, rows):
+        """Seed read-only rows for ``table`` (e.g. persisted scan history)."""
+        self.rows.setdefault(table, []).extend(list(rows))
+
 
 class _FakeSupabaseTable:
+    """Minimal query-builder stand-in supporting insert and simple selects."""
+
     def __init__(self, name, client):
         self._name = name
         self._client = client
+        self._mode = None
+        self._payload = None
+        self._filters = []
+        self._order = None
+        self._limit = None
 
     def insert(self, payload):
+        self._mode = "insert"
         self._payload = payload
+        return self
+
+    def select(self, columns="*"):
+        self._mode = "select"
+        return self
+
+    def eq(self, column, value):
+        self._filters.append((column, value))
+        return self
+
+    def order(self, column, desc=False):
+        self._order = (column, desc)
+        return self
+
+    def limit(self, limit):
+        self._limit = limit
         return self
 
     def execute(self):
         if self._client.fail_next_execute:
             raise ConnectionError("database unavailable")
-        self._client.inserts.setdefault(self._name, []).append(self._payload)
-        return {"data": [self._payload]}
+        if self._mode == "insert":
+            if self._client.fail_inserts:
+                raise ConnectionError("database unavailable")
+            self._client.inserts.setdefault(self._name, []).append(self._payload)
+            # Make inserted rows queryable, mirroring the live database.
+            row = dict(self._payload)
+            row.setdefault("id", str(uuid.uuid4()))
+            self._client.rows.setdefault(self._name, []).append(row)
+            return {"data": [row]}
+        rows = self._client.rows.get(self._name, [])
+        for column, value in self._filters:
+            rows = [r for r in rows if r.get(column) == value]
+        if self._order:
+            column, desc = self._order
+            rows = sorted(rows, key=lambda r: r.get(column) or "", reverse=bool(desc))
+        if self._limit is not None:
+            rows = rows[: self._limit]
+        return {"data": rows}
 
 
 @pytest.fixture(autouse=True)
 def fake_supabase(monkeypatch):
-    """Patch the Supabase client so no test ever touches the network."""
+    """Patch the Supabase client so no test ever touches the network.
+
+    The per-request ``get_user_supabase_client`` is replaced with the same
+    in-memory fake across every service module. It records the access token
+    forwarded by the service layer (``fake_supabase.auth_tokens``) so tests can
+    prove JWT forwarding.
+    """
     client = _FakeSupabaseClient()
-    monkeypatch.setattr(
-        "app.services.scanner_service.get_supabase_client", lambda: client
-    )
-    monkeypatch.setattr(
-        "app.services.email_service.get_supabase_client", lambda: client
-    )
-    monkeypatch.setattr(
-        "app.services.password_service.get_supabase_client", lambda: client
-    )
-    monkeypatch.setattr(
-        "app.services.log_service.get_supabase_client", lambda: client
-    )
+
+    def _scoped(access_token=None):
+        client.track_auth(access_token)
+        return client
+
+    for module in (
+        "app.services.auth_service",
+        "app.services.scanner_service",
+        "app.services.email_service",
+        "app.services.password_service",
+        "app.services.log_service",
+        "app.services.report_service",
+    ):
+        monkeypatch.setattr(module + ".get_user_supabase_client", _scoped)
     return client
 
 
@@ -182,12 +242,3 @@ def _jwt_auth_harness(app, monkeypatch, _jwt_signing_keys):
     _, public_pem = _jwt_signing_keys
     _FakeJWKClient.public_key = public_pem
     monkeypatch.setattr(security_utils, "PyJWKClient", _FakeJWKClient)
-
-
-@pytest.fixture(autouse=True)
-def _clean_report_store():
-    """Reset the in-memory report store before each test."""
-    from app.services.report_service import ReportService
-
-    ReportService.clear_reports()
-    yield

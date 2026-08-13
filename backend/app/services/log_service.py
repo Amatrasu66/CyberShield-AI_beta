@@ -16,8 +16,9 @@ results are persisted to ``public.log_scans``; raw log content is never stored.
 import re
 from urllib.parse import unquote
 
-from ..database import get_supabase_client
+from ..database import get_user_supabase_client
 from ..errors import ServiceUnavailableError, ValidationError
+from ..middleware.auth_middleware import get_current_access_token
 
 # Apache combined / common log format.
 COMBINED_LOG_REGEX = re.compile(
@@ -141,11 +142,13 @@ class LogService:
         when Supabase is not configured. Only schema-approved fields are
         stored. Raw log content is never persisted; only findings/metadata are
         written. ``user_id`` always comes from the verified JWT, never from
-        the client.
+        the client. The row is written through a user-scoped client
+        authenticated with the request's access token, so RLS scopes it to
+        ``auth.uid()``.
         """
         if not user_id:
             return
-        client = get_supabase_client()
+        client = get_user_supabase_client(get_current_access_token())
         if client is None:
             return
 

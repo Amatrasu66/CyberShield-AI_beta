@@ -23,8 +23,9 @@ from urllib.parse import urlsplit
 
 import requests
 
-from ..database import get_supabase_client
+from ..database import get_user_supabase_client
 from ..errors import ServiceUnavailableError, ValidationError
+from ..middleware.auth_middleware import get_current_access_token
 from ..utils.validators import is_private_host
 
 RECOMMENDED_HEADERS = {
@@ -134,11 +135,13 @@ class ScannerService:
         Persistence is skipped when there is no authenticated ``user_id`` (e.g.
         direct service use) or when Supabase is not configured. Only completed
         (reachable) scans are stored. ``user_id`` always comes from the verified
-        JWT, never from the client.
+        JWT, never from the client. The row is written through a user-scoped
+        client authenticated with the request's access token, so RLS scopes it
+        to ``auth.uid()``.
         """
         if not user_id or not result.get("reachable"):
             return
-        client = get_supabase_client()
+        client = get_user_supabase_client(get_current_access_token())
         if client is None:
             return
         payload = {

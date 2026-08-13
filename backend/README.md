@@ -83,6 +83,7 @@ verifies and resolves to the authenticated user ID (`auth.uid()`).
 |--------|----------|-------------|
 | GET | `/api/health` | Service liveness and dependency status |
 | GET | `/api/version` | Backend + API version information |
+| GET | `/api/auth/me` | Authenticated user's profile (from the verified JWT) |
 | POST | `/api/scanner/website` | Passive website security scan |
 | POST | `/api/email/analyze` | Phishing detection (deterministic placeholder) |
 | POST | `/api/password/analyze` | Password strength analysis |
@@ -93,8 +94,8 @@ verifies and resolves to the authenticated user ID (`auth.uid()`).
 | POST | `/api/crypto/encode` | base64 / hex encoding (educational) |
 | POST | `/api/crypto/decode` | base64 / hex decoding (educational) |
 | POST | `/api/sql/demo` | Educational SQL injection comparison (no SQL executed) |
-| GET | `/api/reports` | List in-memory reports |
-| POST | `/api/reports/generate` | Generate an in-memory report |
+| GET | `/api/reports` | List the authenticated user's PDF reports (signed URLs) |
+| POST | `/api/reports/generate` | Generate a PDF report from the user's scan data |
 
 ## Response Format
 
@@ -121,13 +122,12 @@ Errors:
 ## Phase Status
 
 Deterministic now: password analyzer, cryptography lab, SQL playground,
-website scanner, phishing/log analyzers (rule-based placeholders), reports
-(in-memory).
+website scanner, phishing/log analyzers (rule-based placeholders).
+
+Using Supabase: reports are generated from the authenticated user's stored
+scan history, rendered as PDFs, uploaded to private Storage, and listed from
+`public.reports` with signed access URLs.
 
 Waiting for ML phase: phishing email classification and log anomaly detection
 will swap the deterministic placeholders for trained models without changing
 the API contract.
-
-Waiting for Supabase phase: report persistence, scan history, and profile
-data. User authentication is already delegated to Supabase Auth; Flask only
-verifies Supabase access JWTs on protected endpoints.

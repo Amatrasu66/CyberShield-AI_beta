@@ -13,7 +13,7 @@ requests receive HTTP 401.
 
 from functools import wraps
 
-from flask import request
+from flask import has_request_context, request
 
 from ..errors import UnauthorizedError
 from ..utils.security import decode_supabase_token
@@ -39,14 +39,33 @@ def get_current_user_id() -> str:
     return claims["sub"]
 
 
+def get_current_access_token() -> str:
+    """Return the verified Bearer access token for the current request.
+
+    ``require_auth`` stores the verified token on ``request.access_token``.
+    Outside a request context (or when no token was attached) an empty string
+    is returned, so user-scoped services degrade gracefully to an anonymous
+    client.
+    """
+    if not has_request_context():
+        return ""
+    return getattr(request, "access_token", "") or ""
+
+
 def require_auth(f):
-    """Require a valid Supabase Auth JWT. Stores claims on ``request.auth``."""
+    """Require a valid Supabase Auth JWT.
+
+    Stores the verified claims on ``request.auth`` and the raw access token on
+    ``request.access_token`` so downstream services can forward the token to
+    user-scoped (RLS-preserving) database operations.
+    """
 
     @wraps(f)
     def decorated_function(*args, **kwargs):
         token = get_bearer_token()
         claims = decode_supabase_token(token)
         request.auth = claims
+        request.access_token = token
         return f(*args, **kwargs)
 
     return decorated_function

@@ -5,11 +5,17 @@ Builds lazily initialized, process-wide Supabase clients from the application
 configuration. No network traffic occurs at import time; clients are created
 on first use and cached for the lifetime of the process.
 
-Two client profiles are exposed:
+Three client profiles are exposed:
 
-- :func:`get_supabase_client`: low-privilege client backed by the publishable
-  key. It runs as the ``anon``/``authenticated`` Postgres roles, so Row Level
-  Security is preserved. This is the default client for user-scoped access.
+- :func:`get_supabase_client`: cached, low-privilege client backed by the
+  publishable key. It runs as the ``anon``/``authenticated`` Postgres roles, so
+  Row Level Security is preserved. Because it is shared process-wide it must
+  never be impersonated with a per-request token.
+- :func:`get_user_supabase_client`: a fresh, per-request low-privilege client
+  authenticated as the requesting user. It uses the publishable key and
+  forwards the user's verified access token, so PostgREST evaluates Row Level
+  Security as ``auth.uid()``. This is the client to use for all user-scoped
+  database operations.
 - :func:`get_supabase_admin_client`: elevated client backed by the secret key.
   It runs as the ``service_role`` Postgres role and bypasses Row Level
   Security. Server-only; never expose it to the frontend.
@@ -29,6 +35,16 @@ def _first_key(*values: str) -> str:
         if stripped:
             return stripped
     return ""
+
+
+def _publishable_key() -> str:
+    """Resolve the low-privilege publishable key (with legacy fallbacks)."""
+    cfg = get_config()
+    return _first_key(
+        cfg.SUPABASE_PUBLISHABLE_KEY,
+        cfg.SUPABASE_ANON_KEY,
+        cfg.SUPABASE_KEY,
+    )
 
 
 def _build_client(url: str, key: str) -> Client | None:
@@ -57,12 +73,34 @@ def get_supabase_client() -> Client | None:
         and a low-privilege key are not both present.
     """
     cfg = get_config()
-    key = _first_key(
-        cfg.SUPABASE_PUBLISHABLE_KEY,
-        cfg.SUPABASE_ANON_KEY,
-        cfg.SUPABASE_KEY,
-    )
-    return _build_client(cfg.SUPABASE_URL, key)
+    return _build_client(cfg.SUPABASE_URL, _publishable_key())
+
+
+def get_user_supabase_client(access_token: str = None) -> Client | None:
+    """Return a low-privilege client authenticated as the requesting user.
+
+    A fresh client is created for each call (never cached) so per-request
+    access tokens cannot race across threads on a shared session. The client
+    uses the publishable key and, when ``access_token`` is supplied, forwards
+    it as the Bearer token so PostgREST runs as that user and Row Level
+    Security is preserved. Normal user-scoped reads/writes must go through this
+    client; the secret/admin client must not be used for them.
+
+    Args:
+        access_token: the user's verified Supabase Auth access token (from the
+            Flask request). When empty, the client stays anonymous.
+
+    Returns:
+        A configured :class:`supabase.Client`, or ``None`` if ``SUPABASE_URL``
+        and a low-privilege key are not both present.
+    """
+    cfg = get_config()
+    client = _build_client(cfg.SUPABASE_URL, _publishable_key())
+    if client is None:
+        return None
+    if access_token:
+        client.postgrest.auth(access_token)
+    return client
 
 
 @lru_cache(maxsize=1)

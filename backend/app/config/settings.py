@@ -122,6 +122,12 @@ class Config:
     # when left empty.
     SUPABASE_JWKS_URL = os.environ.get("SUPABASE_JWKS_URL", "")
 
+    # --- Reports (PDF generation) ----------------------------------------
+    # Private Supabase Storage bucket where generated PDF reports are stored.
+    REPORT_STORAGE_BUCKET = os.environ.get("REPORT_STORAGE_BUCKET", "report-pdfs")
+    # Lifetime (in seconds) of signed access URLs issued for report PDFs.
+    REPORT_SIGNED_URL_EXPIRES = _env_int("REPORT_SIGNED_URL_EXPIRES", 3600)
+
     # --- Future: ML model paths (reserved, not used in this phase) -------
     PHISHING_MODEL_PATH = os.environ.get("PHISHING_MODEL_PATH", "../models/phishing_model.pkl")
     LOG_MODEL_PATH = os.environ.get("LOG_MODEL_PATH", "../models/log_analyzer.pkl")

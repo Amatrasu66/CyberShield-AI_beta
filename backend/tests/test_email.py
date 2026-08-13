@@ -121,7 +121,7 @@ class TestEmailPersistence:
 
     def test_skips_persistence_when_client_unconfigured(self, monkeypatch):
         monkeypatch.setattr(
-            "app.services.email_service.get_supabase_client", lambda: None
+            "app.services.email_service.get_user_supabase_client", lambda access_token=None: None
         )
         content = "click here urgently and verify your password"
         result = EmailService.analyze_email(content, user_id=self.USER_ID)

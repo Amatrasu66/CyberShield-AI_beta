@@ -4,7 +4,9 @@ Security Audit Reports Routes.
 GET /api/reports
 POST /api/reports/generate
 
-Reports are stored in memory only; persistence is pending Supabase.
+Reports are generated from the authenticated user's Supabase scan data, stored
+in ``public.reports``, and their PDFs uploaded to private Storage with signed
+access URLs. The user ID always comes from the verified JWT (``auth.uid()``).
 """
 
 from flask import Blueprint

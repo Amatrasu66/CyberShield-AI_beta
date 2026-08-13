@@ -15,8 +15,9 @@ import math
 import re
 import string
 
-from ..database import get_supabase_client
+from ..database import get_user_supabase_client
 from ..errors import ServiceUnavailableError
+from ..middleware.auth_middleware import get_current_access_token
 
 # Charset sizes used for the pool-based entropy estimate.
 POOL_SIZES = {
@@ -94,10 +95,12 @@ class PasswordService:
         Supabase is not configured. Only schema-approved derived metrics are
         stored. The plaintext password and any password hash are never persisted.
         ``user_id`` always comes from the verified JWT, never from the client.
+        The row is written through a user-scoped client authenticated with the
+        request's access token, so RLS scopes it to ``auth.uid()``.
         """
         if not user_id:
             return
-        client = get_supabase_client()
+        client = get_user_supabase_client(get_current_access_token())
         if client is None:
             return
 

@@ -1,77 +1,78 @@
 """
 Authentication Service.
 
-Routes and validation for authentication are implemented, but actual
-registration/login requires persistent storage. Persistence is provided by
-Supabase in the database phase; until then these operations return a clear,
-structured 501 response instead of silently pretending to succeed.
+Supabase Auth owns registration, login, sessions and password hashing; React
+calls Supabase Auth directly (``/auth/v1/signup``, ``/auth/v1/token``,
+``/auth/v1/logout``, ``/auth/v1/user``). The Flask API therefore exposes no
+signup/login routes and never sees passwords.
 
-Security: passwords are validated for format only, never stored, never logged.
+The only backend auth functionality required by the architecture is resolving
+the authenticated user's profile from ``public.profiles``. ``user_id`` always
+comes from the verified Supabase JWT ``sub`` claim (``auth.uid()``); it is never
+accepted from the request body. Reads run through the user-scoped client so RLS
+keeps the lookup to the requesting user.
 """
 
-from ..errors import FeatureUnavailableError, ValidationError
-from ..utils.validators import validate_email
-from ..utils.security import hash_password
+from ..database import get_user_supabase_client
+from ..errors import ServiceUnavailableError
+from ..middleware.auth_middleware import get_current_access_token
 
-UNAVAILABLE_MESSAGE = (
-    "Authentication persistence requires the Supabase database integration "
-    "which is planned for the next development phase."
-)
+PROFILES_TABLE = "profiles"
 
-MIN_PASSWORD_LENGTH = 8
-MAX_PASSWORD_LENGTH = 128
+
+def _extract_rows(result) -> list:
+    """Extract the ``data`` list from a supabase ``execute()`` result."""
+    if result is None:
+        return []
+    if isinstance(result, dict):
+        data = result.get("data")
+    else:
+        data = getattr(result, "data", None)
+    return data or []
 
 
 class AuthService:
-    """Auth service scaffold — functional once Supabase is wired in."""
+    """Resolve the authenticated user's profile from the verified JWT identity."""
 
     @staticmethod
-    def register(email: str, password: str) -> dict:
-        """Validate registration payload and hand off to persistence."""
-        email = validate_email(email)
-        _validate_password(password)
+    def get_profile(user_id: str) -> dict | None:
+        """Return the user's profile row from ``public.profiles``.
 
-        # No persistence layer exists yet — this is validated and then refused.
-        raise FeatureUnavailableError(
-            UNAVAILABLE_MESSAGE,
-            code="AUTH_UNAVAILABLE",
-            details={"endpoint": "register", "phase": "supabase-integration"},
-        )
+        Args:
+            user_id: the authenticated user UUID (``auth.uid()``) from the
+                verified JWT, never from the client payload.
 
-    @staticmethod
-    def login(email: str, password: str) -> dict:
-        """Validate login payload and hand off to persistence."""
-        email = validate_email(email)
-        if not isinstance(password, str) or not password:
-            raise ValidationError("'password' is required", details={"field": "password"})
-        if len(password) > MAX_PASSWORD_LENGTH:
-            raise ValidationError(
-                f"'password' exceeds {MAX_PASSWORD_LENGTH} characters",
-                details={"field": "password"},
+        Returns:
+            The profile row (``id``, ``full_name``, ``role``, ``created_at``,
+            ``updated_at``) or ``None`` when the user has no profile row yet.
+
+        Raises:
+            ServiceUnavailableError: when Supabase is not configured or the
+                profile cannot be retrieved.
+        """
+        if not user_id:
+            return None
+
+        client = get_user_supabase_client(get_current_access_token())
+        if client is None:
+            raise ServiceUnavailableError(
+                "Profile is unavailable (Supabase not configured)",
+                code="PROFILE_UNAVAILABLE",
             )
 
-        raise FeatureUnavailableError(
-            UNAVAILABLE_MESSAGE,
-            code="AUTH_UNAVAILABLE",
-            details={"endpoint": "login", "phase": "supabase-integration"},
-        )
+        try:
+            result = (
+                client.table(PROFILES_TABLE)
+                .select("*")
+                .eq("id", user_id)
+                .limit(1)
+                .execute()
+            )
+        except Exception as exc:
+            raise ServiceUnavailableError(
+                "Profile could not be retrieved",
+                details={"table": PROFILES_TABLE, "error": type(exc).__name__},
+            ) from exc
 
-    @staticmethod
-    def _password_hash_only(password: str) -> str:
-        """Demonstrate bcrypt hashing path used once persistence exists."""
-        return hash_password(password)
-
-
-def _validate_password(password):
-    if not isinstance(password, str):
-        raise ValidationError("'password' must be a string", details={"field": "password"})
-    if len(password) < MIN_PASSWORD_LENGTH:
-        raise ValidationError(
-            f"'password' must be at least {MIN_PASSWORD_LENGTH} characters",
-            details={"field": "password"},
-        )
-    if len(password) > MAX_PASSWORD_LENGTH:
-        raise ValidationError(
-            f"'password' exceeds {MAX_PASSWORD_LENGTH} characters",
-            details={"field": "password"},
-        )
+        rows = _extract_rows(result)
+        return dict(rows[0]) if rows else None

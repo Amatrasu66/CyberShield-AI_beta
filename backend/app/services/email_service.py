@@ -15,8 +15,9 @@ Email content is never stored and never logged.
 
 import re
 
-from ..database import get_supabase_client
+from ..database import get_user_supabase_client
 from ..errors import ServiceUnavailableError, ValidationError
+from ..middleware.auth_middleware import get_current_access_token
 
 URL_REGEX = re.compile(r"(?:https?://|www\.)[^\s]+", re.IGNORECASE)
 
@@ -116,11 +117,13 @@ class EmailService:
         Supabase is not configured. Only schema-approved fields are stored.
         Raw email content is never persisted; only indicators/findings and
         metadata are stored. ``user_id`` always comes from the verified JWT,
-        never from the client.
+        never from the client. The row is written through a user-scoped client
+        authenticated with the request's access token, so RLS scopes it to
+        ``auth.uid()``.
         """
         if not user_id:
             return
-        client = get_supabase_client()
+        client = get_user_supabase_client(get_current_access_token())
         if client is None:
             return
 
