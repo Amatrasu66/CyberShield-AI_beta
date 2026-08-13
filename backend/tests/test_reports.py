@@ -37,26 +37,30 @@ class TestReportService:
 
 
 class TestReportEndpoints:
-    def test_generate_endpoint(self, client):
-        response = client.post("/api/reports/generate", json={"title": "Weekly audit"})
+    def test_generate_endpoint(self, client, auth_headers):
+        response = client.post(
+            "/api/reports/generate", json={"title": "Weekly audit"}, headers=auth_headers
+        )
         assert response.status_code == 201
         body = response.get_json()
         assert body["success"] is True
         assert body["data"]["title"] == "Weekly audit"
 
-    def test_list_endpoint(self, client):
-        client.post("/api/reports/generate", json={"title": "A"})
-        response = client.get("/api/reports")
+    def test_list_endpoint(self, client, auth_headers):
+        client.post("/api/reports/generate", json={"title": "A"}, headers=auth_headers)
+        response = client.get("/api/reports", headers=auth_headers)
         assert response.status_code == 200
         body = response.get_json()
         assert body["meta"]["count"] == 1
         assert body["data"][0]["title"] == "A"
 
-    def test_list_empty(self, client):
-        response = client.get("/api/reports")
+    def test_list_empty(self, client, auth_headers):
+        response = client.get("/api/reports", headers=auth_headers)
         assert response.status_code == 200
         assert response.get_json()["meta"]["count"] == 0
 
-    def test_generate_invalid_payload(self, client):
-        response = client.post("/api/reports/generate", json={"title": 123})
+    def test_generate_invalid_payload(self, client, auth_headers):
+        response = client.post(
+            "/api/reports/generate", json={"title": 123}, headers=auth_headers
+        )
         assert response.status_code == 400

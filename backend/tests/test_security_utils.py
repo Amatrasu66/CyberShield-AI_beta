@@ -32,5 +32,12 @@ class TestJWT:
 
     def test_tampered_token_rejected(self, app):
         token = create_access_token("user-123")
+        # Flip a character inside the payload segment: the signature's final
+        # char shares low bits with base64 padding, so mutating it can leave
+        # the decoded signature unchanged. Tampering the payload always breaks
+        # the signature deterministically.
+        mid = len(token) // 2
+        replacement = "A" if token[mid] != "A" else "B"
+        tampered = token[:mid] + replacement + token[mid + 1:]
         with pytest.raises(UnauthorizedError):
-            decode_token(token[:-1] + ("A" if token[-1] != "A" else "B"))
+            decode_token(tampered)

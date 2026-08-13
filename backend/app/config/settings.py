@@ -88,14 +88,39 @@ class Config:
     URL_MAX_LENGTH = _env_int("URL_MAX_LENGTH", 2048)
 
     # --- Supabase (PostgreSQL database) ------------------------------------
+    # From the Supabase dashboard: Project Settings > API Keys.
     SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
-    # Legacy client key. Superseded by SUPABASE_ANON_KEY / SERVICE_ROLE_KEY.
+    # Legacy single key. Kept only as a last-resort fallback for the
+    # publishable key on existing deployments.
     SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
-    # Public anon key for the default client (safe for frontend use).
-    SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", SUPABASE_KEY)
-    # Privileged service-role key for trusted server-side operations.
-    # NEVER expose this key to the frontend or in client-side code.
+    # Legacy low-privilege key. Backward-compatible fallback for the
+    # publishable key.
+    SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
+    # Legacy elevated key. Backward-compatible fallback for the secret key.
     SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+    # Low-privilege publishable key for the default client (safe for frontend
+    # use; access is constrained by RLS). Replaces SUPABASE_ANON_KEY.
+    SUPABASE_PUBLISHABLE_KEY = os.environ.get(
+        "SUPABASE_PUBLISHABLE_KEY", SUPABASE_ANON_KEY or SUPABASE_KEY
+    )
+    # Elevated secret key for trusted server-side operations only; bypasses
+    # RLS. Replaces SUPABASE_SERVICE_ROLE_KEY.
+    # NEVER expose this key to the frontend or in client-side code.
+    SUPABASE_SECRET_KEY = os.environ.get("SUPABASE_SECRET_KEY", SUPABASE_SERVICE_ROLE_KEY)
+
+    # --- Supabase JWT verification (auth) --------------------------------
+    # Access tokens are signed by Supabase Auth with RS256 and published keys
+    # via the project JWKS endpoint. The endpoint and the expected token claims
+    # are derived from SUPABASE_URL unless explicitly overridden.
+    SUPABASE_JWT_ALGORITHM = os.environ.get("SUPABASE_JWT_ALGORITHM", "RS256")
+    # Supabase sets aud="authenticated" on access tokens issued to signed-in
+    # users.
+    SUPABASE_JWT_AUDIENCE = os.environ.get("SUPABASE_JWT_AUDIENCE", "authenticated")
+    # Issuer override; derived as "{SUPABASE_URL}/auth/v1" when left empty.
+    SUPABASE_JWT_ISSUER = os.environ.get("SUPABASE_JWT_ISSUER", "")
+    # JWKS endpoint override; derived as "{SUPABASE_URL}/auth/v1/.well-known/jwks.json"
+    # when left empty.
+    SUPABASE_JWKS_URL = os.environ.get("SUPABASE_JWKS_URL", "")
 
     # --- Future: ML model paths (reserved, not used in this phase) -------
     PHISHING_MODEL_PATH = os.environ.get("PHISHING_MODEL_PATH", "../models/phishing_model.pkl")

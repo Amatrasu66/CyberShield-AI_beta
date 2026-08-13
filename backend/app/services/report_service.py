@@ -26,8 +26,13 @@ class ReportService:
     """Generate and list in-memory security reports."""
 
     @staticmethod
-    def generate_report(config: dict) -> dict:
-        """Build an in-memory report from a configuration payload."""
+    def generate_report(config: dict, user_id: str = None) -> dict:
+        """Build an in-memory report from a configuration payload.
+
+        ``user_id`` is the authenticated user UUID (``auth.uid()``) taken from
+        the verified JWT, never from the client payload. It is stored on the
+        report so results can be scoped per user.
+        """
         title = config.get("title", "Security Audit Report")
         if not isinstance(title, str) or not title.strip():
             raise ValidationError("'title' must be a non-empty string", details={"field": "title"})
@@ -42,6 +47,7 @@ class ReportService:
 
         report = {
             "id": str(uuid.uuid4()),
+            "user_id": user_id,
             "title": title.strip(),
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "finding_count": len(findings),
@@ -58,10 +64,15 @@ class ReportService:
         return report
 
     @staticmethod
-    def list_reports() -> list:
-        """Return all reports generated during the current process lifetime."""
+    def list_reports(user_id: str = None) -> list:
+        """Return reports generated during the current process lifetime.
+
+        When ``user_id`` is given, only that user's reports are returned.
+        """
         with _lock:
-            return list(_reports)
+            if user_id is None:
+                return list(_reports)
+            return [r for r in _reports if r.get("user_id") == user_id]
 
     @staticmethod
     def clear_reports():

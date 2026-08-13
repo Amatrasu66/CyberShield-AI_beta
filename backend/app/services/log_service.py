@@ -9,13 +9,15 @@ Future phase (ML integration): anomaly detection will be replaced by the trained
 model behind ``app/ml/log_analyzer.py``. The service method signature
 ``analyze_logs(content) -> dict`` will NOT change.
 
-Safety: input is size-limited and processed line by line; nothing is persisted.
+Safety: input is size-limited and processed line by line. Only analysis
+results are persisted to ``public.log_scans``; raw log content is never stored.
 """
 
 import re
 from urllib.parse import unquote
 
-from ..errors import ValidationError
+from ..database import get_supabase_client
+from ..errors import ServiceUnavailableError, ValidationError
 
 # Apache combined / common log format.
 COMBINED_LOG_REGEX = re.compile(
@@ -43,8 +45,12 @@ class LogService:
     ANALYZER_ID = "deterministic-rule-based-placeholder"
 
     @staticmethod
-    def analyze_logs(log_content: str, log_format: str = "auto") -> dict:
-        """Parse and analyze server log text."""
+    def analyze_logs(log_content: str, log_format: str = "auto", user_id: str = None) -> dict:
+        """Parse and analyze server log text.
+
+        ``user_id`` is the authenticated user UUID (``auth.uid()``); it scopes
+        the persisted scan record and is never taken from the client.
+        """
         if not isinstance(log_content, str):
             raise ValidationError("'content' must be a string", details={"field": "content"})
 
@@ -102,7 +108,7 @@ class LogService:
         threat_score = _threat_score(anomalies)
         total_lines = len([l for l in lines if l.strip()])
 
-        return {
+        result = {
             "total_lines": total_lines,
             "parsed_lines": parsed,
             "skipped_lines": total_lines - parsed,
@@ -123,6 +129,41 @@ class LogService:
             },
             "anomalies": anomalies[:MAX_REPORTED_ANOMALIES],
         }
+
+        LogService._persist_scan(user_id, result)
+        return result
+
+    @staticmethod
+    def _persist_scan(user_id: str, result: dict) -> None:
+        """Persist a completed log analysis to ``public.log_scans``.
+
+        Persistence is skipped when there is no authenticated ``user_id`` or
+        when Supabase is not configured. Only schema-approved fields are
+        stored. Raw log content is never persisted; only findings/metadata are
+        written. ``user_id`` always comes from the verified JWT, never from
+        the client.
+        """
+        if not user_id:
+            return
+        client = get_supabase_client()
+        if client is None:
+            return
+
+        payload = {
+            "user_id": user_id,
+            "event_count": result["parsed_lines"],
+            "anomaly_count": result["anomalies_detected"],
+            "findings": result["anomalies"],
+            "risk_level": result["severity"],
+            "model_version": LogService.ANALYZER_ID,
+        }
+        try:
+            client.table("log_scans").insert(payload).execute()
+        except Exception as exc:
+            raise ServiceUnavailableError(
+                "Log analysis results could not be stored",
+                details={"table": "log_scans", "error": type(exc).__name__},
+            )
 
 
 def _add_anomaly(anomalies, line_number, anomaly_type, severity, evidence):

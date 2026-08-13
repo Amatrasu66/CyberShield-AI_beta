@@ -2,6 +2,7 @@
 
 import pytest
 
+from app.errors import ServiceUnavailableError
 from app.services.log_service import LogService
 
 SAMPLE_LOG = """\
@@ -62,22 +63,117 @@ class TestLogService:
 
 
 class TestLogEndpoint:
-    def test_analyze_endpoint(self, client):
-        response = client.post("/api/logs/analyze", json={"content": SAMPLE_LOG})
+    def test_analyze_endpoint(self, client, auth_headers):
+        response = client.post("/api/logs/analyze", json={"content": SAMPLE_LOG}, headers=auth_headers)
         assert response.status_code == 200
         body = response.get_json()
         assert body["success"] is True
         assert body["data"]["anomalies_detected"] >= 6
 
-    def test_missing_content(self, client):
-        response = client.post("/api/logs/analyze", json={})
+    def test_missing_content(self, client, auth_headers):
+        response = client.post("/api/logs/analyze", json={}, headers=auth_headers)
         assert response.status_code == 400
 
-    def test_oversized_content_rejected(self, client):
-        response = client.post("/api/logs/analyze", json={"content": "a" * 5000})
+    def test_oversized_content_rejected(self, client, auth_headers):
+        response = client.post(
+            "/api/logs/analyze", json={"content": "a" * 5000}, headers=auth_headers
+        )
         assert response.status_code == 400
         assert response.get_json()["error"]["code"] == "VALIDATION_ERROR"
 
-    def test_non_json_body_rejected(self, client):
-        response = client.post("/api/logs/analyze", data="not json", content_type="text/plain")
+    def test_non_json_body_rejected(self, client, auth_headers):
+        response = client.post(
+            "/api/logs/analyze", data="not json", content_type="text/plain", headers=auth_headers
+        )
         assert response.status_code == 400
+
+
+class TestLogPersistence:
+    USER_ID = "44444444-4444-4444-8444-444444444444"
+
+    def test_persists_completed_analysis(self, fake_supabase):
+        result = LogService.analyze_logs(SAMPLE_LOG, user_id=self.USER_ID)
+        payload = fake_supabase.inserts["log_scans"][-1]
+        assert payload["user_id"] == self.USER_ID
+        assert payload["event_count"] == result["parsed_lines"]
+        assert payload["anomaly_count"] == result["anomalies_detected"]
+        assert payload["findings"] == result["anomalies"]
+        assert payload["risk_level"] == result["severity"]
+        assert payload["model_version"] == "deterministic-rule-based-placeholder"
+        assert set(payload) == {
+            "user_id", "event_count", "anomaly_count",
+            "findings", "risk_level", "model_version",
+        }
+
+    def test_never_persists_raw_log_content(self, fake_supabase):
+        distinctive = (
+            '9.9.9.9 - - [01/Jan/2026:10:00:40 +0000] '
+            '"GET /distinctive-clean-page HTTP/1.1" 200 512 "-" "Mozilla/5.0"'
+        )
+        raw = SAMPLE_LOG + distinctive + "\n"
+        LogService.analyze_logs(raw, user_id=self.USER_ID)
+        payload = fake_supabase.inserts["log_scans"][-1]
+        assert SAMPLE_LOG not in str(payload)
+        assert distinctive not in str(payload)
+        assert "content" not in payload
+
+    def test_skips_persistence_without_user(self, fake_supabase):
+        result = LogService.analyze_logs(SAMPLE_LOG)
+        assert result["anomalies_detected"] >= 6
+        assert "log_scans" not in fake_supabase.inserts
+
+    def test_skips_persistence_when_client_unconfigured(self, monkeypatch):
+        monkeypatch.setattr(
+            "app.services.log_service.get_supabase_client", lambda: None
+        )
+        result = LogService.analyze_logs(SAMPLE_LOG, user_id=self.USER_ID)
+        assert result["anomalies_detected"] >= 6
+
+    def test_database_failure_raises_service_unavailable(self, fake_supabase):
+        fake_supabase.fail_next_execute = True
+        with pytest.raises(ServiceUnavailableError):
+            LogService.analyze_logs(SAMPLE_LOG, user_id=self.USER_ID)
+
+
+class TestLogPersistenceEndpoint:
+    def test_analyze_endpoint_persists_scan(
+        self, client, auth_headers, fake_supabase, auth_user_id
+    ):
+        response = client.post(
+            "/api/logs/analyze", json={"content": SAMPLE_LOG}, headers=auth_headers
+        )
+        assert response.status_code == 200
+        body = response.get_json()
+        payload = fake_supabase.inserts["log_scans"][-1]
+        assert payload["user_id"] == auth_user_id
+        assert payload["event_count"] == body["data"]["parsed_lines"]
+        assert payload["anomaly_count"] == body["data"]["anomalies_detected"]
+        assert payload["risk_level"] == body["data"]["severity"]
+        assert payload["model_version"] == body["data"]["analyzer"]
+
+    def test_analyze_endpoint_ignores_user_id_from_body(
+        self, client, auth_headers, auth_user_id, fake_supabase
+    ):
+        response = client.post(
+            "/api/logs/analyze",
+            json={
+                "content": SAMPLE_LOG,
+                "user_id": "99999999-9999-4999-8999-999999999999",
+            },
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+        payload = fake_supabase.inserts["log_scans"][-1]
+        assert payload["user_id"] == auth_user_id
+
+    def test_analyze_endpoint_database_failure_returns_503(
+        self, client, auth_headers, fake_supabase
+    ):
+        fake_supabase.fail_next_execute = True
+        response = client.post(
+            "/api/logs/analyze", json={"content": SAMPLE_LOG}, headers=auth_headers
+        )
+        assert response.status_code == 503
+        body = response.get_json()
+        assert body["success"] is False
+        assert body["error"]["code"] == "SERVICE_UNAVAILABLE"

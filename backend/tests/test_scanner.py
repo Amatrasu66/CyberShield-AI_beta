@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.errors import ValidationError
+from app.errors import ServiceUnavailableError, ValidationError
 from app.services.scanner_service import ScannerService
 from app.utils.validators import is_private_host, validate_url
 
@@ -163,25 +163,156 @@ class TestScannerService:
 
 
 class TestScannerEndpoint:
-    def test_scan_endpoint_returns_result(self, client, monkeypatch):
+    def test_scan_endpoint_returns_result(self, client, monkeypatch, auth_headers):
         monkeypatch.setattr(
             "app.services.scanner_service.ScannerService._fetch",
             staticmethod(lambda url, cfg: _fetch_ok()),
         )
-        response = client.post("/api/scanner/website", json={"url": "https://example.com"})
+        response = client.post(
+            "/api/scanner/website", json={"url": "https://example.com"}, headers=auth_headers
+        )
         assert response.status_code == 200
         body = response.get_json()
         assert body["success"] is True
         assert body["data"]["reachable"] is True
 
-    def test_scan_endpoint_invalid_url(self, client, monkeypatch):
+    def test_scan_endpoint_invalid_url(self, client, monkeypatch, auth_headers):
         monkeypatch.setattr(
             "app.services.scanner_service.ScannerService._fetch",
             staticmethod(lambda url, cfg: _fetch_ok()),
         )
-        response = client.post("/api/scanner/website", json={"url": "ftp://example.com"})
+        response = client.post(
+            "/api/scanner/website", json={"url": "ftp://example.com"}, headers=auth_headers
+        )
         assert response.status_code == 400
 
-    def test_scan_endpoint_missing_url(self, client):
-        response = client.post("/api/scanner/website", json={})
+    def test_scan_endpoint_missing_url(self, client, auth_headers):
+        response = client.post("/api/scanner/website", json={}, headers=auth_headers)
         assert response.status_code == 400
+
+
+class TestScannerPersistence:
+    USER_ID = "11111111-1111-4111-8111-111111111111"
+
+    def test_persists_completed_scan(self, fake_supabase, monkeypatch):
+        monkeypatch.setattr(
+            "app.services.scanner_service.ScannerService._fetch",
+            staticmethod(lambda url, cfg: _fetch_ok()),
+        )
+        result = ScannerService.scan_website(
+            "https://example.com", SCAN_CONFIG, user_id=self.USER_ID
+        )
+        assert result["reachable"] is True
+        payload = fake_supabase.inserts["website_scans"][-1]
+        assert payload["user_id"] == self.USER_ID
+        assert payload["target_url"] == "https://example.com"
+        assert payload["status"] == "completed"
+        assert payload["security_score"] == result["score"]
+        assert payload["risk_level"] in {"low", "medium", "high", "critical"}
+        assert payload["findings"] == result["checks"]
+        assert set(payload) == {
+            "user_id", "target_url", "status", "security_score", "risk_level", "findings",
+        }
+
+    def test_skips_persistence_without_user(self, fake_supabase, monkeypatch):
+        monkeypatch.setattr(
+            "app.services.scanner_service.ScannerService._fetch",
+            staticmethod(lambda url, cfg: _fetch_ok()),
+        )
+        result = ScannerService.scan_website("https://example.com", SCAN_CONFIG)
+        assert result["reachable"] is True
+        assert "website_scans" not in fake_supabase.inserts
+
+    def test_skips_persistence_when_client_unconfigured(self, monkeypatch):
+        monkeypatch.setattr(
+            "app.services.scanner_service.ScannerService._fetch",
+            staticmethod(lambda url, cfg: _fetch_ok()),
+        )
+        monkeypatch.setattr(
+            "app.services.scanner_service.get_supabase_client", lambda: None
+        )
+        result = ScannerService.scan_website(
+            "https://example.com", SCAN_CONFIG, user_id=self.USER_ID
+        )
+        assert result["reachable"] is True
+
+    def test_skips_persistence_for_unreachable_scan(self, fake_supabase, monkeypatch):
+        monkeypatch.setattr(
+            "app.services.scanner_service.ScannerService._fetch",
+            staticmethod(lambda url, cfg: {
+                "error": "connection",
+                "error_message": "Could not connect to the target server.",
+                "final_url": url,
+                "final_scheme": "https",
+                "status_code": None,
+                "headers": {},
+                "raw_set_cookie": [],
+                "cert": None,
+            }),
+        )
+        result = ScannerService.scan_website(
+            "https://down.example.com", SCAN_CONFIG, user_id=self.USER_ID
+        )
+        assert result["reachable"] is False
+        assert "website_scans" not in fake_supabase.inserts
+
+    def test_database_failure_raises_service_unavailable(self, fake_supabase, monkeypatch):
+        fake_supabase.fail_next_execute = True
+        monkeypatch.setattr(
+            "app.services.scanner_service.ScannerService._fetch",
+            staticmethod(lambda url, cfg: _fetch_ok()),
+        )
+        with pytest.raises(ServiceUnavailableError):
+            ScannerService.scan_website(
+                "https://example.com", SCAN_CONFIG, user_id=self.USER_ID
+            )
+
+
+class TestScannerPersistenceEndpoint:
+    def test_scan_endpoint_persists_scan(self, client, monkeypatch, auth_headers, fake_supabase):
+        monkeypatch.setattr(
+            "app.services.scanner_service.ScannerService._fetch",
+            staticmethod(lambda url, cfg: _fetch_ok()),
+        )
+        response = client.post(
+            "/api/scanner/website", json={"url": "https://example.com"}, headers=auth_headers
+        )
+        assert response.status_code == 200
+        body = response.get_json()
+        assert body["success"] is True
+        assert body["data"]["reachable"] is True
+        payload = fake_supabase.inserts["website_scans"][-1]
+        assert payload["target_url"] == "https://example.com"
+        assert payload["status"] == "completed"
+
+    def test_scan_endpoint_ignores_user_id_from_body(
+        self, client, monkeypatch, auth_headers, auth_user_id, fake_supabase
+    ):
+        monkeypatch.setattr(
+            "app.services.scanner_service.ScannerService._fetch",
+            staticmethod(lambda url, cfg: _fetch_ok()),
+        )
+        response = client.post(
+            "/api/scanner/website",
+            json={"url": "https://example.com", "user_id": "99999999-9999-4999-8999-999999999999"},
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+        payload = fake_supabase.inserts["website_scans"][-1]
+        assert payload["user_id"] == auth_user_id
+
+    def test_scan_endpoint_database_failure_returns_503(
+        self, client, monkeypatch, auth_headers, fake_supabase
+    ):
+        fake_supabase.fail_next_execute = True
+        monkeypatch.setattr(
+            "app.services.scanner_service.ScannerService._fetch",
+            staticmethod(lambda url, cfg: _fetch_ok()),
+        )
+        response = client.post(
+            "/api/scanner/website", json={"url": "https://example.com"}, headers=auth_headers
+        )
+        assert response.status_code == 503
+        body = response.get_json()
+        assert body["success"] is False
+        assert body["error"]["code"] == "SERVICE_UNAVAILABLE"

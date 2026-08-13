@@ -23,7 +23,8 @@ from urllib.parse import urlsplit
 
 import requests
 
-from ..errors import ValidationError
+from ..database import get_supabase_client
+from ..errors import ServiceUnavailableError, ValidationError
 from ..utils.validators import is_private_host
 
 RECOMMENDED_HEADERS = {
@@ -68,8 +69,12 @@ class ScannerService:
     """Passive website security analysis. Suitable for authorized education."""
 
     @staticmethod
-    def scan_website(url: str, config: dict = None) -> dict:
-        """Scan a validated URL and return structured security findings."""
+    def scan_website(url: str, config: dict = None, user_id: str = None) -> dict:
+        """Scan a validated URL and return structured security findings.
+
+        ``user_id`` is the authenticated user UUID (``auth.uid()``); it scopes
+        the persisted scan record and is never taken from the client.
+        """
         from flask import current_app
 
         cfg = config or current_app.config
@@ -105,7 +110,7 @@ class ScannerService:
         denominator = passed + failed
         score = round((passed / denominator) * 100) if denominator else 0
 
-        return {
+        result = {
             "target": url,
             "reachable": True,
             "final_url": fetch["final_url"],
@@ -118,8 +123,40 @@ class ScannerService:
                 f"{passed} passed, {failed} failed, {warnings} warning(s) out of {len(checks)} checks."
             ),
         }
+        ScannerService._persist_scan(user_id, url, result)
+        return result
 
     # ------------------------------------------------------------ internals
+    @staticmethod
+    def _persist_scan(user_id: str, target_url: str, result: dict) -> None:
+        """Persist a completed website scan to ``public.website_scans``.
+
+        Persistence is skipped when there is no authenticated ``user_id`` (e.g.
+        direct service use) or when Supabase is not configured. Only completed
+        (reachable) scans are stored. ``user_id`` always comes from the verified
+        JWT, never from the client.
+        """
+        if not user_id or not result.get("reachable"):
+            return
+        client = get_supabase_client()
+        if client is None:
+            return
+        payload = {
+            "user_id": user_id,
+            "target_url": target_url,
+            "status": "completed",
+            "security_score": result["score"],
+            "risk_level": _risk_level(result["score"]),
+            "findings": result["checks"],
+        }
+        try:
+            client.table("website_scans").insert(payload).execute()
+        except Exception as exc:
+            raise ServiceUnavailableError(
+                "Website scan results could not be stored",
+                details={"table": "website_scans", "error": type(exc).__name__},
+            )
+
     @staticmethod
     def _fetch(url: str, cfg) -> dict:
         """Fetch response headers only (never the body). Returns a structured dict."""
@@ -344,6 +381,17 @@ def _grade(score: int) -> str:
     if score >= 40:
         return "D"
     return "F"
+
+
+def _risk_level(score: int) -> str:
+    """Map a 0-100 security score to a risk level (low/medium/high/critical)."""
+    if score >= 75:
+        return "low"
+    if score >= 60:
+        return "medium"
+    if score >= 40:
+        return "high"
+    return "critical"
 
 
 def _cert_days_left(cert: dict):

@@ -15,6 +15,10 @@ def test_health_returns_ok(client):
 
 
 def test_health_reports_database_not_configured(app, client):
+    # The app is created from the developer's environment, which may set
+    # SUPABASE_URL via a local .env. Pin the Supabase configuration to empty
+    # so this test checks the truly-unconfigured path on any machine.
+    app.config["SUPABASE_URL"] = ""
     response = client.get("/api/health")
     body = response.get_json()
     assert body["data"]["dependencies"]["database"] == "not_configured"

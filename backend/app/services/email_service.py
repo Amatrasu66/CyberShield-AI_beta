@@ -15,7 +15,8 @@ Email content is never stored and never logged.
 
 import re
 
-from ..errors import ValidationError
+from ..database import get_supabase_client
+from ..errors import ServiceUnavailableError, ValidationError
 
 URL_REGEX = re.compile(r"(?:https?://|www\.)[^\s]+", re.IGNORECASE)
 
@@ -44,8 +45,13 @@ class EmailService:
     ANALYZER_ID = "deterministic-heuristic-placeholder"
 
     @staticmethod
-    def analyze_email(content: str) -> dict:
-        """Analyze email text and return phishing risk indicators."""
+    def analyze_email(content: str, user_id: str = None) -> dict:
+        """Analyze email text and return phishing risk indicators.
+
+        ``user_id`` is the authenticated user UUID (``auth.uid()``); it is
+        reserved for result scoping once persistence lands and is never taken
+        from the client.
+        """
         if not isinstance(content, str):
             raise ValidationError("'content' must be a string", details={"field": "content"})
 
@@ -89,7 +95,7 @@ class EmailService:
         risk_level = _risk_level(risk_score)
         confidence = min(0.95, round(0.5 + risk_score / 200, 2))
 
-        return {
+        result = {
             "is_phishing": risk_level == "phishing",
             "risk_level": risk_level,
             "risk_score": risk_score,
@@ -99,6 +105,65 @@ class EmailService:
             "indicators": indicators,
             "stats": {"word_count": word_count, "link_count": url_count},
         }
+        EmailService._persist_scan(user_id, content, result)
+        return result
+
+    @staticmethod
+    def _persist_scan(user_id: str, email_content: str, result: dict) -> None:
+        """Persist a completed email scan to ``public.email_scans``.
+
+        Persistence is skipped when there is no authenticated ``user_id`` or when
+        Supabase is not configured. Only schema-approved fields are stored.
+        Raw email content is never persisted; only indicators/findings and
+        metadata are stored. ``user_id`` always comes from the verified JWT,
+        never from the client.
+        """
+        if not user_id:
+            return
+        client = get_supabase_client()
+        if client is None:
+            return
+
+        subject = EmailService._extract_subject(email_content)
+        sender_email = EmailService._extract_sender(email_content)
+        predicted_label = "phishing" if result["is_phishing"] else "safe"
+
+        payload = {
+            "user_id": user_id,
+            "subject": subject,
+            "sender_email": sender_email,
+            "predicted_label": predicted_label,
+            "confidence": result["confidence"],
+            "risk_level": result["risk_level"],
+            "indicators": result["indicators"],
+            "model_version": EmailService.ANALYZER_ID,
+        }
+        try:
+            client.table("email_scans").insert(payload).execute()
+        except Exception as exc:
+            raise ServiceUnavailableError(
+                "Email scan results could not be stored",
+                details={"table": "email_scans", "error": type(exc).__name__},
+            )
+
+    @staticmethod
+    def _extract_subject(content: str) -> str | None:
+        """Extract subject line from email content if present."""
+        for line in content.splitlines():
+            if line.lower().startswith("subject:"):
+                return line.split(":", 1)[1].strip()
+        return None
+
+    @staticmethod
+    def _extract_sender(content: str) -> str | None:
+        """Extract sender email from email content if present."""
+        import re
+        for line in content.splitlines():
+            if line.lower().startswith("from:"):
+                match = re.search(r"[\w\.-]+@[\w\.-]+\.\w+", line)
+                if match:
+                    return match.group(0)
+        return None
 
 
 def _uppercase_ratio(text: str) -> float:

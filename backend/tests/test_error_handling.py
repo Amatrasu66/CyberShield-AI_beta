@@ -18,31 +18,34 @@ def test_405_returns_json_envelope(client):
     assert body["error"]["code"] == "METHOD_NOT_ALLOWED"
 
 
-def test_malformed_json_returns_400(client):
+def test_malformed_json_returns_400(client, auth_headers):
     response = client.post(
         "/api/password/analyze",
         data="{invalid json",
         content_type="application/json",
+        headers=auth_headers,
     )
     assert response.status_code == 400
     assert response.get_json()["error"]["code"] == "INVALID_JSON"
 
 
-def test_non_json_content_type_returns_400(client):
+def test_non_json_content_type_returns_400(client, auth_headers):
     response = client.post(
         "/api/password/analyze",
         data="hello",
         content_type="text/plain",
+        headers=auth_headers,
     )
     assert response.status_code in {400, 415}
     assert response.get_json()["success"] is False
 
 
-def test_payload_too_large_returns_413(app, client):
+def test_payload_too_large_returns_413(app, client, auth_headers):
     app.config["MAX_CONTENT_LENGTH"] = 1000
     response = client.post(
         "/api/email/analyze",
         json={"content": "a" * 5000},
+        headers=auth_headers,
     )
     assert response.status_code == 413
     assert response.get_json()["error"]["code"] == "PAYLOAD_TOO_LARGE"

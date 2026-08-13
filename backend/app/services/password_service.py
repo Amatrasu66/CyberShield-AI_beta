@@ -6,14 +6,17 @@ password: length, character classes, entropy estimate, strength classification,
 crack-time estimate, and actionable recommendations.
 
 Security guarantees:
-- The password is never stored anywhere.
-- The password is never logged.
-- Only aggregate characteristics are returned.
+- The plaintext password is never stored or logged.
+- Only aggregate, derived characteristics are persisted.
+- Only schema-defined metrics are written to ``public.password_scans``.
 """
 
 import math
 import re
 import string
+
+from ..database import get_supabase_client
+from ..errors import ServiceUnavailableError
 
 # Charset sizes used for the pool-based entropy estimate.
 POOL_SIZES = {
@@ -47,10 +50,13 @@ class PasswordService:
     """Deterministic password strength analysis (no ML, no storage)."""
 
     @staticmethod
-    def analyze_password(password: str) -> dict:
+    def analyze_password(password: str, user_id: str = None) -> dict:
         """Analyze a password and return its security characteristics.
 
         ``password`` is used only for computation and discarded afterwards.
+        ``user_id`` is the authenticated user UUID (``auth.uid()``); it is
+        reserved for result scoping once persistence lands and is never taken
+        from the client.
         """
         analysis = {
             "length": len(password),
@@ -77,7 +83,43 @@ class PasswordService:
         analysis["recommendations"] = sorted(
             analysis["recommendations"], key=lambda r: r.get("priority", 99)
         )
+        PasswordService._persist_scan(user_id, analysis)
         return analysis
+
+    @staticmethod
+    def _persist_scan(user_id: str, result: dict) -> None:
+        """Persist a completed password analysis to ``public.password_scans``.
+
+        Persistence is skipped when there is no authenticated ``user_id`` or when
+        Supabase is not configured. Only schema-approved derived metrics are
+        stored. The plaintext password and any password hash are never persisted.
+        ``user_id`` always comes from the verified JWT, never from the client.
+        """
+        if not user_id:
+            return
+        client = get_supabase_client()
+        if client is None:
+            return
+
+        payload = {
+            "user_id": user_id,
+            "password_length": result["length"],
+            "entropy": result["entropy_bits"],
+            "strength_score": result["strength_score"],
+            "strength_label": result["strength"],
+            "has_upper": result["uppercase"],
+            "has_lower": result["lowercase"],
+            "has_number": result["digits"],
+            "has_symbol": result["special"],
+            "breached": result["in_common_list"],
+        }
+        try:
+            client.table("password_scans").insert(payload).execute()
+        except Exception as exc:
+            raise ServiceUnavailableError(
+                "Password scan results could not be stored",
+                details={"table": "password_scans", "error": type(exc).__name__},
+            )
 
 
 def _character_classes(password: str) -> list:
