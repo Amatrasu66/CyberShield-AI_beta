@@ -1,56 +1,171 @@
--- CyberShield AI Supabase PostgreSQL Initial Database Schema (Placeholder)
+-- CyberShield AI Supabase PostgreSQL Database Schema
+--
+-- Supabase Auth manages the authentication user store in `auth.users`.
+-- There is NO `public.users` table and password hashes are never stored in
+-- the application database. Application user data lives in `public.profiles`,
+-- linked 1:1 to `auth.users.id`.
+--
+-- Run this in the Supabase SQL editor. It is idempotent (IF NOT EXISTS).
 
--- Users Table
-CREATE TABLE IF NOT EXISTS users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email TEXT UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+-- ============================================================================
+-- Profiles (1:1 with auth.users)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS profiles (
+    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    full_name TEXT,
+    role TEXT CHECK (role IN ('Student', 'Faculty', 'Internship Evaluator')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ
 );
 
--- Website Scans Table
+-- Auto-create a profile when a new user signs up via Supabase Auth.
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    INSERT INTO public.profiles (id)
+    VALUES (NEW.id)
+    ON CONFLICT (id) DO NOTHING;
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+    AFTER INSERT ON auth.users
+    FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- ============================================================================
+-- Website Scans
+-- ============================================================================
 CREATE TABLE IF NOT EXISTS website_scans (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     target_url TEXT NOT NULL,
-    scan_result JSONB,
-    score INT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    status TEXT CHECK (status IN ('pending', 'running', 'completed', 'failed')),
+    security_score INT CHECK (security_score >= 0 AND security_score <= 100),
+    risk_level TEXT CHECK (risk_level IN ('low', 'medium', 'high', 'critical')),
+    findings JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Email Scans Table
+-- ============================================================================
+-- Email Scans
+-- Raw email content is not persisted; only findings/indicators and metadata.
+-- ============================================================================
 CREATE TABLE IF NOT EXISTS email_scans (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    email_text TEXT NOT NULL,
-    is_phishing BOOLEAN,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    subject TEXT,
+    sender_email TEXT,
+    predicted_label TEXT CHECK (predicted_label IN ('phishing', 'safe')),
     confidence FLOAT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    risk_level TEXT,
+    indicators JSONB,
+    model_version TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Password Scans Table
+-- ============================================================================
+-- Password Scans
+-- Derived metrics only. The analyzed password or its hash are never stored.
+-- ============================================================================
 CREATE TABLE IF NOT EXISTS password_scans (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    entropy_score FLOAT,
-    strength_rating TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    password_length INT,
+    entropy FLOAT,
+    strength_score INT CHECK (strength_score >= 0 AND strength_score <= 100),
+    strength_label TEXT,
+    has_upper BOOLEAN,
+    has_lower BOOLEAN,
+    has_number BOOLEAN,
+    has_symbol BOOLEAN,
+    breached BOOLEAN,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Log Scans Table
+-- ============================================================================
+-- Log Scans
+-- Raw log content is not persisted; only findings/results and metadata.
+-- ============================================================================
 CREATE TABLE IF NOT EXISTS log_scans (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    log_summary JSONB,
-    anomalies_detected INT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    event_count INT,
+    anomaly_count INT,
+    findings JSONB,
+    risk_level TEXT,
+    model_version TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Reports Table
+-- ============================================================================
+-- Reports
+-- ============================================================================
 CREATE TABLE IF NOT EXISTS reports (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    report_name TEXT NOT NULL,
-    file_path TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    report_type TEXT CHECK (report_type IN ('pdf')),
+    storage_path TEXT,
+    report_data JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- ============================================================================
+-- Indexes
+-- ============================================================================
+CREATE INDEX IF NOT EXISTS idx_website_scans_user_created
+    ON website_scans (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_email_scans_user_created
+    ON email_scans (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_password_scans_user_created
+    ON password_scans (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_log_scans_user_created
+    ON log_scans (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_reports_user_created
+    ON reports (user_id, created_at DESC);
+
+-- ============================================================================
+-- Row Level Security
+-- All scan tables and reports are user-scoped via auth.uid().
+-- ============================================================================
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE website_scans ENABLE ROW LEVEL SECURITY;
+ALTER TABLE email_scans ENABLE ROW LEVEL SECURITY;
+ALTER TABLE password_scans ENABLE ROW LEVEL SECURITY;
+ALTER TABLE log_scans ENABLE ROW LEVEL SECURITY;
+ALTER TABLE reports ENABLE ROW LEVEL SECURITY;
+
+-- profiles: owner-only SELECT / UPDATE (INSERT handled by the signup trigger).
+DROP POLICY IF EXISTS "profiles_select_own" ON profiles;
+CREATE POLICY "profiles_select_own" ON profiles
+    FOR SELECT USING (id = auth.uid());
+DROP POLICY IF EXISTS "profiles_update_own" ON profiles;
+CREATE POLICY "profiles_update_own" ON profiles
+    FOR UPDATE USING (id = auth.uid()) WITH CHECK (id = auth.uid());
+
+-- Scan tables and reports: owner-only SELECT / INSERT / UPDATE / DELETE.
+DROP POLICY IF EXISTS "website_scans_owner_all" ON website_scans;
+CREATE POLICY "website_scans_owner_all" ON website_scans
+    FOR ALL USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+
+DROP POLICY IF EXISTS "email_scans_owner_all" ON email_scans;
+CREATE POLICY "email_scans_owner_all" ON email_scans
+    FOR ALL USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+
+DROP POLICY IF EXISTS "password_scans_owner_all" ON password_scans;
+CREATE POLICY "password_scans_owner_all" ON password_scans
+    FOR ALL USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+
+DROP POLICY IF EXISTS "log_scans_owner_all" ON log_scans;
+CREATE POLICY "log_scans_owner_all" ON log_scans
+    FOR ALL USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+
+DROP POLICY IF EXISTS "reports_owner_all" ON reports;
+CREATE POLICY "reports_owner_all" ON reports
+    FOR ALL USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
