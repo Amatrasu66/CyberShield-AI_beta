@@ -28,7 +28,7 @@ export function NewScanModal({ onClose }: NewScanModalProps) {
 
   useEffect(() => {
     const previouslyFocused = document.activeElement as HTMLElement | null;
-    panelRef.current?.focus();
+    panelRef.current?.querySelector<HTMLElement>('button')?.focus();
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {

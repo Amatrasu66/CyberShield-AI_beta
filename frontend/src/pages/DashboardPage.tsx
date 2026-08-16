@@ -191,6 +191,7 @@ export function DashboardPage({ compact = false }: DashboardPageProps) {
             Retry
           </Button>
         </Card>
+        {isNewScanOpen && <NewScanModal onClose={() => setIsNewScanOpen(false)} />}
       </>
     );
   }
@@ -207,6 +208,7 @@ export function DashboardPage({ compact = false }: DashboardPageProps) {
         <Card className="p-8 text-center">
           <p className="text-on-surface-variant">No dashboard data available</p>
         </Card>
+        {isNewScanOpen && <NewScanModal onClose={() => setIsNewScanOpen(false)} />}
       </>
     );
   }
