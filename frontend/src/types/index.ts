@@ -80,3 +80,29 @@ export interface DashboardData {
   readonly activity: readonly DashboardActivity[];
   readonly trend: DashboardTrend;
 }
+
+export type EmailRiskLevel = 'phishing' | 'suspicious' | 'safe';
+
+export type EmailIndicatorSeverity = 'High' | 'Medium' | 'Low';
+
+export interface EmailIndicator {
+  readonly name: string;
+  readonly severity: EmailIndicatorSeverity;
+  readonly evidence: string;
+}
+
+export interface EmailAnalysisStats {
+  readonly word_count: number;
+  readonly link_count: number;
+}
+
+export interface EmailAnalysisResult {
+  readonly is_phishing: boolean;
+  readonly risk_level: EmailRiskLevel;
+  readonly risk_score: number;
+  readonly confidence: number;
+  readonly analyzer: string;
+  readonly summary: string;
+  readonly indicators: readonly EmailIndicator[];
+  readonly stats: EmailAnalysisStats;
+}
