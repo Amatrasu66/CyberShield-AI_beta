@@ -109,10 +109,12 @@ class Config:
     SUPABASE_SECRET_KEY = os.environ.get("SUPABASE_SECRET_KEY", SUPABASE_SERVICE_ROLE_KEY)
 
     # --- Supabase JWT verification (auth) --------------------------------
-    # Access tokens are signed by Supabase Auth with RS256 and published keys
+    # Access tokens are signed by Supabase Auth with ES256 and published keys
     # via the project JWKS endpoint. The endpoint and the expected token claims
-    # are derived from SUPABASE_URL unless explicitly overridden.
-    SUPABASE_JWT_ALGORITHM = os.environ.get("SUPABASE_JWT_ALGORITHM", "RS256")
+    # are derived from SUPABASE_URL unless explicitly overridden. May name a
+    # single algorithm or a comma-separated list (e.g. "ES256,RS256") to accept
+    # both while Supabase signing keys are rotated.
+    SUPABASE_JWT_ALGORITHM = os.environ.get("SUPABASE_JWT_ALGORITHM", "ES256")
     # Supabase sets aud="authenticated" on access tokens issued to signed-in
     # users.
     SUPABASE_JWT_AUDIENCE = os.environ.get("SUPABASE_JWT_AUDIENCE", "authenticated")
@@ -121,6 +123,10 @@ class Config:
     # JWKS endpoint override; derived as "{SUPABASE_URL}/auth/v1/.well-known/jwks.json"
     # when left empty.
     SUPABASE_JWKS_URL = os.environ.get("SUPABASE_JWKS_URL", "")
+    # Seconds of clock-skew tolerance applied to the iat/nbf/exp claims. Supabase
+    # stamps iat with its own clock, which can be a couple of seconds ahead of
+    # the backend host; PyJWT otherwise rejects such tokens as immature.
+    SUPABASE_JWT_LEEWAY = _env_int("SUPABASE_JWT_LEEWAY", 10)
 
     # --- Reports (PDF generation) ----------------------------------------
     # Private Supabase Storage bucket where generated PDF reports are stored.

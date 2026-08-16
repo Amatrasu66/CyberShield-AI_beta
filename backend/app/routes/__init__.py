@@ -8,6 +8,7 @@ configuration value rather than URL path segments, matching the documented API.
 
 from .auth_routes import auth_bp
 from .crypto_routes import crypto_bp
+from .dashboard_routes import dashboard_bp
 from .email_routes import email_bp
 from .log_routes import log_bp
 from .password_routes import password_bp
@@ -22,6 +23,7 @@ def register_blueprints(app):
     prefix = app.config.get("API_URL_PREFIX", "/api")
     app.register_blueprint(system_bp, url_prefix=prefix)
     app.register_blueprint(auth_bp, url_prefix=f"{prefix}/auth")
+    app.register_blueprint(dashboard_bp, url_prefix=f"{prefix}/dashboard")
     app.register_blueprint(scanner_bp, url_prefix=f"{prefix}/scanner")
     app.register_blueprint(email_bp, url_prefix=f"{prefix}/email")
     app.register_blueprint(password_bp, url_prefix=f"{prefix}/password")

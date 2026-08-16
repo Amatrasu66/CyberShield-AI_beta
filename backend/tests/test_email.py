@@ -93,7 +93,7 @@ class TestEmailPersistence:
         assert payload["sender_email"] == "security@bank.com"
         assert payload["predicted_label"] == "phishing"
         assert payload["confidence"] == result["confidence"]
-        assert payload["risk_level"] == "phishing"
+        assert payload["risk_level"] == "critical"
         assert payload["indicators"] == result["indicators"]
         assert payload["model_version"] == "deterministic-heuristic-placeholder"
         assert set(payload) == {
@@ -111,7 +111,7 @@ class TestEmailPersistence:
         assert result["is_phishing"] is False
         payload = fake_supabase.inserts["email_scans"][-1]
         assert payload["predicted_label"] == "safe"
-        assert payload["risk_level"] in {"safe", "suspicious"}
+        assert payload["risk_level"] == "low"
 
     def test_skips_persistence_without_user(self, fake_supabase):
         content = "click here urgently and verify your password"

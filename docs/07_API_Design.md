@@ -24,6 +24,16 @@ POST /api/password/analyze
 ## Log Analyzer
 POST /api/logs/analyze
 
+## Dashboard
+GET /api/dashboard
+
+Returns the authenticated user's aggregated security overview: metric cards
+(security score, scans completed, threats detected, assets monitored), recent
+scans, a synthesized activity feed, and a 12-day scan trend. All data is
+derived from the user's own scan and report tables via user-scoped, RLS-preserving
+reads. `user_id` always comes from the verified JWT; query parameters and the
+request body are ignored.
+
 ## Reports
 GET /api/reports
 POST /api/reports/generate

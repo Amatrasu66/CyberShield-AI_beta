@@ -1,7 +1,8 @@
 """Tests for Supabase JWT verification and the ``require_auth`` middleware.
 
 JWKS fetching is mocked with a fake ``PyJWKClient`` so no network is needed;
-tokens are real RS256 JWTs generated with an in-test RSA key.
+tokens are real RS256 and ES256 JWTs generated with in-test RSA and EC P-256
+keys.
 """
 
 import uuid
@@ -10,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 import jwt
 import pytest
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from flask import request
 
 from app.errors import UnauthorizedError
@@ -63,12 +64,16 @@ def _make_token(
     audience=AUDIENCE,
     expire_in_seconds=3600,
     issued_seconds_ago=60,
+    algorithm="RS256",
+    kid=None,
     **overrides,
 ):
-    """Build an RS256-signed Supabase-style access token.
+    """Build a signed Supabase-style access token.
 
     Pass ``sub=None``/``issuer=None`` to omit that claim; pass a string to set
-    it; omit the argument entirely to keep the default valid value.
+    it; omit the argument entirely to keep the default valid value. ``algorithm``
+    selects the signing algorithm (``RS256`` or ``ES256``) and ``kid``, when
+    given, is attached to the token header for JWKS key selection.
     """
     now = datetime.now(timezone.utc)
     claims = {
@@ -92,7 +97,8 @@ def _make_token(
             claims.pop(name, None)
         else:
             claims[name] = value
-    return jwt.encode(claims, private_key, algorithm="RS256")
+    headers = {"kid": kid} if kid else None
+    return jwt.encode(claims, private_key, algorithm=algorithm, headers=headers)
 
 
 @pytest.fixture()
@@ -134,6 +140,73 @@ def protected_client(app, client, monkeypatch, signing_keys, supabase_config):
 
     app.add_url_rule("/api/_tests/protected", "test_protected", protected_view)
     return client, signing_keys[0]
+
+
+@pytest.fixture()
+def es256_signing_keys():
+    """In-test EC P-256 key pair used to sign and verify ES256 test JWTs."""
+    private_key = ec.generate_private_key(ec.SECP256R1())
+    public_pem = private_key.public_key().public_bytes(
+        serialization.Encoding.PEM,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode("utf-8")
+    return private_key, public_pem
+
+
+class _FakeJWKClientByKid:
+    """Fake JWK client that selects the signing key by JWT ``kid``."""
+
+    keys_by_kid = {}
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def get_signing_key_from_jwt(self, token):
+        kid = jwt.get_unverified_header(token).get("kid")
+        if not kid or kid not in _FakeJWKClientByKid.keys_by_kid:
+            raise jwt.exceptions.InvalidKeyError("no signing key for kid")
+        return _FakeSigningKey(_FakeJWKClientByKid.keys_by_kid[kid])
+
+
+@pytest.fixture()
+def es256_supabase_config(app):
+    """Pin ES256 Supabase JWT configuration on the test app."""
+    app.config["SUPABASE_URL"] = SUPABASE_URL
+    app.config["SUPABASE_JWKS_URL"] = ""
+    app.config["SUPABASE_JWT_ISSUER"] = ""
+    app.config["SUPABASE_JWT_ALGORITHM"] = "ES256"
+    app.config["SUPABASE_JWT_AUDIENCE"] = AUDIENCE
+    return app
+
+
+@pytest.fixture()
+def es256_verifier(app, monkeypatch, es256_signing_keys, es256_supabase_config):
+    """Patch the JWKS client with an EC P-256 key and return it for signing."""
+    _, public_pem = es256_signing_keys
+    _FakeJWKClient.public_key = public_pem
+    monkeypatch.setattr(security_utils, "PyJWKClient", _FakeJWKClient)
+    return es256_signing_keys[0]
+
+
+@pytest.fixture()
+def es256_protected_client(app, client, monkeypatch, es256_signing_keys, es256_supabase_config):
+    """Client with a ``@require_auth`` protected route verified with ES256."""
+    _, public_pem = es256_signing_keys
+    _FakeJWKClient.public_key = public_pem
+    monkeypatch.setattr(security_utils, "PyJWKClient", _FakeJWKClient)
+
+    @require_auth
+    def protected_view():
+        return success_response(
+            {
+                "user_id": get_current_user_id(),
+                "sub": getattr(request, "auth", {}).get("sub"),
+            },
+            "Protected resource",
+        )
+
+    app.add_url_rule("/api/_tests/protected", "test_protected_es256", protected_view)
+    return client, es256_signing_keys[0]
 
 
 class TestDecodeSupabaseToken:
@@ -191,6 +264,128 @@ class TestDecodeSupabaseToken:
         app.config["SUPABASE_JWT_ISSUER"] = ""
         with pytest.raises(UnauthorizedError):
             security_utils.decode_supabase_token("ignored.value")
+
+
+class TestDecodeSupabaseTokenES256:
+    def test_valid_es256_token_returns_claims(self, app, es256_verifier):
+        subject = str(uuid.uuid4())
+        claims = security_utils.decode_supabase_token(
+            _make_token(es256_verifier, algorithm="ES256", sub=subject)
+        )
+        assert claims["sub"] == subject
+        assert claims["iss"] == f"{SUPABASE_URL}/auth/v1"
+        assert claims["aud"] == AUDIENCE
+        assert "exp" in claims
+        assert claims["role"] == "authenticated"
+
+    def test_expired_es256_token_rejected(self, app, es256_verifier):
+        with pytest.raises(UnauthorizedError):
+            security_utils.decode_supabase_token(
+                _make_token(es256_verifier, algorithm="ES256", expire_in_seconds=-10)
+            )
+
+    def test_wrong_audience_rejected(self, app, es256_verifier):
+        with pytest.raises(UnauthorizedError):
+            security_utils.decode_supabase_token(
+                _make_token(es256_verifier, algorithm="ES256", audience="service_role")
+            )
+
+    def test_wrong_issuer_rejected(self, app, es256_verifier):
+        with pytest.raises(UnauthorizedError):
+            security_utils.decode_supabase_token(
+                _make_token(
+                    es256_verifier,
+                    algorithm="ES256",
+                    issuer="https://evil.example.com/auth/v1",
+                )
+            )
+
+    def test_missing_sub_rejected(self, app, es256_verifier):
+        with pytest.raises(UnauthorizedError):
+            security_utils.decode_supabase_token(
+                _make_token(es256_verifier, algorithm="ES256", sub=None)
+            )
+
+    def test_non_uuid_sub_rejected(self, app, es256_verifier):
+        with pytest.raises(UnauthorizedError):
+            security_utils.decode_supabase_token(
+                _make_token(es256_verifier, algorithm="ES256", sub="not-a-uuid")
+            )
+
+    def test_missing_exp_rejected(self, app, es256_verifier):
+        with pytest.raises(UnauthorizedError):
+            security_utils.decode_supabase_token(
+                _make_token(es256_verifier, algorithm="ES256", exp=None)
+            )
+
+    def test_clock_skew_iat_accepted_with_leeway(self, app, es256_verifier):
+        future_iat = datetime.now(timezone.utc) + timedelta(seconds=5)
+        claims = security_utils.decode_supabase_token(
+            _make_token(es256_verifier, algorithm="ES256", iat=future_iat)
+        )
+        assert claims["sub"]
+
+    def test_clock_skew_iat_rejected_without_leeway(self, app, es256_verifier):
+        app.config["SUPABASE_JWT_LEEWAY"] = 0
+        future_iat = datetime.now(timezone.utc) + timedelta(seconds=5)
+        with pytest.raises(UnauthorizedError):
+            security_utils.decode_supabase_token(
+                _make_token(es256_verifier, algorithm="ES256", iat=future_iat)
+            )
+
+    def test_bad_es256_signature_rejected(self, app, es256_verifier):
+        other_private = ec.generate_private_key(ec.SECP256R1())
+        with pytest.raises(UnauthorizedError):
+            security_utils.decode_supabase_token(
+                _make_token(other_private, algorithm="ES256")
+            )
+
+    def test_rs256_token_rejected_when_only_es256_configured(self, app, es256_verifier, signing_keys):
+        with pytest.raises(UnauthorizedError):
+            security_utils.decode_supabase_token(
+                _make_token(signing_keys[0], algorithm="RS256")
+            )
+
+    def test_garbage_token_rejected(self, app, es256_verifier):
+        with pytest.raises(UnauthorizedError):
+            security_utils.decode_supabase_token("not.a.jwt")
+
+
+class TestDecodeSupabaseTokenKidSelection:
+    def test_jwks_key_selected_by_kid(self, app, monkeypatch, signing_keys, es256_signing_keys):
+        """Both algorithms verify when the JWKS key is matched by ``kid``."""
+        rsa_private, rsa_public = signing_keys
+        ec_private, ec_public = es256_signing_keys
+        _FakeJWKClientByKid.keys_by_kid = {
+            "rsa-key": rsa_public,
+            "ec-key": ec_public,
+        }
+        app.config["SUPABASE_JWT_ALGORITHM"] = "ES256,RS256"
+        monkeypatch.setattr(security_utils, "PyJWKClient", _FakeJWKClientByKid)
+
+        subject = str(uuid.uuid4())
+        claims = security_utils.decode_supabase_token(
+            _make_token(ec_private, algorithm="ES256", kid="ec-key", sub=subject)
+        )
+        assert claims["sub"] == subject
+
+        claims = security_utils.decode_supabase_token(
+            _make_token(rsa_private, algorithm="RS256", kid="rsa-key", sub=subject)
+        )
+        assert claims["sub"] == subject
+
+    def test_wrong_key_for_algorithm_rejected(self, app, monkeypatch, signing_keys, es256_signing_keys):
+        """A token verified against the wrong kid-matching key is rejected."""
+        rsa_private, rsa_public = signing_keys
+        ec_private, _ = es256_signing_keys
+        _FakeJWKClientByKid.keys_by_kid = {"rsa-key": rsa_public}
+        app.config["SUPABASE_JWT_ALGORITHM"] = "ES256"
+        monkeypatch.setattr(security_utils, "PyJWKClient", _FakeJWKClientByKid)
+
+        with pytest.raises(UnauthorizedError):
+            security_utils.decode_supabase_token(
+                _make_token(ec_private, algorithm="ES256", kid="rsa-key")
+            )
 
 
 class TestGetBearerToken:
@@ -284,3 +479,47 @@ class TestRequireAuthMiddleware:
     def test_health_and_version_remain_public(self, client):
         assert client.get("/api/health").status_code == 200
         assert client.get("/api/version").status_code == 200
+
+
+class TestRequireAuthMiddlewareES256:
+    def test_valid_es256_token_authorized(self, es256_protected_client):
+        client, private_key = es256_protected_client
+        subject = str(uuid.uuid4())
+        token = _make_token(private_key, algorithm="ES256", sub=subject)
+        response = client.get(
+            "/api/_tests/protected",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+        body = response.get_json()
+        assert body["success"] is True
+        assert body["data"]["user_id"] == subject
+        assert body["data"]["sub"] == subject
+
+    def test_expired_es256_token_returns_401(self, es256_protected_client):
+        client, private_key = es256_protected_client
+        token = _make_token(private_key, algorithm="ES256", expire_in_seconds=-10)
+        response = client.get(
+            "/api/_tests/protected",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 401
+
+    def test_forged_es256_signature_returns_401(self, es256_protected_client):
+        client, _ = es256_protected_client
+        other_private = ec.generate_private_key(ec.SECP256R1())
+        forged = _make_token(other_private, algorithm="ES256")
+        response = client.get(
+            "/api/_tests/protected",
+            headers={"Authorization": f"Bearer {forged}"},
+        )
+        assert response.status_code == 401
+
+    def test_rs256_token_rejected_by_es256_route(self, es256_protected_client, signing_keys):
+        client, _ = es256_protected_client
+        token = _make_token(signing_keys[0], algorithm="RS256")
+        response = client.get(
+            "/api/_tests/protected",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 401

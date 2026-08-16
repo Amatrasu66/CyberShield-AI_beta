@@ -131,6 +131,7 @@ def fake_supabase(monkeypatch):
         "app.services.password_service",
         "app.services.log_service",
         "app.services.report_service",
+        "app.services.dashboard_service",
     ):
         monkeypatch.setattr(module + ".get_user_supabase_client", _scoped)
     return client

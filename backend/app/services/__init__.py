@@ -8,6 +8,7 @@ through these services in later phases without changing route contracts.
 
 from .auth_service import AuthService
 from .crypto_service import CryptoService
+from .dashboard_service import DashboardService
 from .email_service import EmailService
 from .log_service import LogService
 from .password_service import PasswordService
@@ -18,6 +19,7 @@ from .sql_service import SQLPlaygroundService
 __all__ = [
     "AuthService",
     "CryptoService",
+    "DashboardService",
     "EmailService",
     "LogService",
     "PasswordService",

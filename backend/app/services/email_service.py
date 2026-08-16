@@ -137,7 +137,7 @@ class EmailService:
             "sender_email": sender_email,
             "predicted_label": predicted_label,
             "confidence": result["confidence"],
-            "risk_level": result["risk_level"],
+            "risk_level": _stored_risk_level(result["risk_level"]),
             "indicators": result["indicators"],
             "model_version": EmailService.ANALYZER_ID,
         }
@@ -167,6 +167,20 @@ class EmailService:
                 if match:
                     return match.group(0)
         return None
+
+
+def _stored_risk_level(risk_level: str) -> str:
+    """Map the classification-level risk to the DB severity vocabulary.
+
+    ``public.email_scans.risk_level`` is constrained to
+    ``('low', 'medium', 'high', 'critical')``. The classification
+    (``phishing``/``suspicious``/``safe``) stays in the API response only.
+    """
+    return {
+        "phishing": "critical",
+        "suspicious": "medium",
+        "safe": "low",
+    }.get(risk_level, "low")
 
 
 def _uppercase_ratio(text: str) -> float:

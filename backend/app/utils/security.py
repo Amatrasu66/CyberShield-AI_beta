@@ -91,6 +91,18 @@ def _supabase_issuer() -> str:
     return f"{base}/auth/v1" if base else ""
 
 
+def _supabase_algorithms() -> list:
+    """Resolve the allowed Supabase JWT signing algorithms.
+
+    ``SUPABASE_JWT_ALGORITHM`` may name a single algorithm (e.g. ``ES256``) or
+    a comma-separated list (e.g. ``ES256,RS256``) to accept both while Supabase
+    signs access tokens during key rotation.
+    """
+    configured = current_app.config.get("SUPABASE_JWT_ALGORITHM", "") or "ES256"
+    algorithms = [alg.strip() for alg in str(configured).split(",") if alg.strip()]
+    return algorithms or ["ES256"]
+
+
 def _get_jwks_client() -> PyJWKClient:
     """Return the per-app JWKS client, constructed once and cached."""
     app = current_app
@@ -108,9 +120,10 @@ def _get_jwks_client() -> PyJWKClient:
 def decode_supabase_token(token: str) -> dict:
     """Verify a Supabase Auth access token and return its claims.
 
-    Resolves the project signing keys from the Supabase JWKS endpoint, then
-    verifies the RS256 signature and the ``iss``, ``aud``, ``exp`` and ``sub``
-    claims. ``sub`` must be the user UUID (``auth.uid()`` in Supabase RLS).
+    Resolves the project signing key from the Supabase JWKS endpoint, matching
+    the key by ``kid``, then verifies the token signature (ES256 by default)
+    and the ``iss``, ``aud``, ``exp`` and ``sub`` claims. ``sub`` must be the
+    user UUID (``auth.uid()`` in Supabase RLS).
 
     Raises :class:`UnauthorizedError` (HTTP 401) for missing configuration,
     unverifiable signatures, expired tokens, invalid claims, or a subject that
@@ -125,18 +138,20 @@ def decode_supabase_token(token: str) -> dict:
             },
         )
 
-    algorithm = current_app.config.get("SUPABASE_JWT_ALGORITHM", "RS256")
+    algorithms = _supabase_algorithms()
     audience = current_app.config.get("SUPABASE_JWT_AUDIENCE", "authenticated")
     issuer = _supabase_issuer() or None
+    leeway = int(current_app.config.get("SUPABASE_JWT_LEEWAY", 10) or 0)
 
     try:
         signing_key = _get_jwks_client().get_signing_key_from_jwt(token)
         claims = jwt.decode(
             token,
             signing_key.key,
-            algorithms=[algorithm],
+            algorithms=algorithms,
             audience=audience,
             issuer=issuer,
+            leeway=leeway,
             options={"require": ["sub", "exp"]},
         )
     except jwt.PyJWTError as exc:

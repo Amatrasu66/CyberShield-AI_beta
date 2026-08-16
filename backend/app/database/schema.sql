@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS email_scans (
     sender_email TEXT,
     predicted_label TEXT CHECK (predicted_label IN ('phishing', 'safe')),
     confidence FLOAT,
-    risk_level TEXT,
+    risk_level TEXT CHECK (risk_level IN ('low', 'medium', 'high', 'critical')),
     indicators JSONB,
     model_version TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -98,7 +98,7 @@ CREATE TABLE IF NOT EXISTS log_scans (
     event_count INT,
     anomaly_count INT,
     findings JSONB,
-    risk_level TEXT,
+    risk_level TEXT CHECK (risk_level IN ('low', 'medium', 'high', 'critical')),
     model_version TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
