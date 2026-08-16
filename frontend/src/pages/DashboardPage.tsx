@@ -36,10 +36,16 @@ function getMaxTrendValue(values: readonly number[]): number {
   return Math.ceil(max / 10) * 10 || 100;
 }
 
+interface NewScanButtonProps { readonly onClick: () => void; }
+function NewScanButton({ onClick }: NewScanButtonProps) {
+  return <Button onClick={onClick}><Plus size={17} /> New scan</Button>;
+}
+
 export function DashboardPage({ compact = false }: DashboardPageProps) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isNewScanOpen, setIsNewScanOpen] = useState(false);
 
   const fetchDashboard = async () => {
     setLoading(true);
@@ -72,7 +78,7 @@ export function DashboardPage({ compact = false }: DashboardPageProps) {
           eyebrow="Security overview"
           title="Your security posture"
           description="Monitor assessment activity and focus your response on the signals that matter."
-          actions={<Button disabled><Plus size={17} /> New scan</Button>}
+          actions={<NewScanButton onClick={() => setIsNewScanOpen(true)} />}
         />
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {['Security score', 'Scans completed', 'Threats detected', 'Assets monitored'].map((label) => (
@@ -160,6 +166,7 @@ export function DashboardPage({ compact = false }: DashboardPageProps) {
             </div>
           </div>
         </Card>
+        {isNewScanOpen && <NewScanModal onClose={() => setIsNewScanOpen(false)} />}
         {compact && <p className="hidden">compact</p>}
       </>
     );
@@ -172,7 +179,7 @@ export function DashboardPage({ compact = false }: DashboardPageProps) {
           eyebrow="Security overview"
           title="Your security posture"
           description="Monitor assessment activity and focus your response on the signals that matter."
-          actions={<Button disabled><Plus size={17} /> New scan</Button>}
+          actions={<NewScanButton onClick={() => setIsNewScanOpen(true)} />}
         />
         <Card className="p-8 text-center">
           <div className="text-danger mb-4" role="alert">
@@ -195,7 +202,7 @@ export function DashboardPage({ compact = false }: DashboardPageProps) {
           eyebrow="Security overview"
           title="Your security posture"
           description="Monitor assessment activity and focus your response on the signals that matter."
-          actions={<Button disabled><Plus size={17} /> New scan</Button>}
+          actions={<NewScanButton onClick={() => setIsNewScanOpen(true)} />}
         />
         <Card className="p-8 text-center">
           <p className="text-on-surface-variant">No dashboard data available</p>
@@ -210,7 +217,7 @@ export function DashboardPage({ compact = false }: DashboardPageProps) {
         eyebrow="Security overview"
         title="Your security posture"
         description="Monitor assessment activity and focus your response on the signals that matter."
-        actions={<Button><Plus size={17} /> New scan</Button>}
+        actions={<NewScanButton onClick={() => setIsNewScanOpen(true)} />}
       />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {[
@@ -328,7 +335,8 @@ export function DashboardPage({ compact = false }: DashboardPageProps) {
           </div>
         )}
       </Card>
-      {compact && <p className="hidden">compact</p>}
+      {isNewScanOpen && <NewScanModal onClose={() => setIsNewScanOpen(false)} />}
+        {compact && <p className="hidden">compact</p>}
     </>
   );
 }
