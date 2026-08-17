@@ -8,7 +8,8 @@ import { EmailDetectorPage } from './pages/EmailDetectorPage';
 import { WebsiteScannerPage } from './pages/WebsiteScannerPage';
 import { PasswordAnalyzerPage } from './pages/PasswordAnalyzerPage';
 import { LogAnalyzerPage } from './pages/LogAnalyzerPage';
-import { NotFoundPage, ProfilePage, ReportsPage, SettingsPage } from './pages/WorkspacePages';
+import { ReportsPage } from './pages/ReportsPage';
+import { NotFoundPage, ProfilePage, SettingsPage } from './pages/WorkspacePages';
 
 export interface AppProps { readonly initialPath?: string; }
 function ConsoleRoutes() {

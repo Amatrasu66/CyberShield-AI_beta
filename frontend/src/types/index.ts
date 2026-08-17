@@ -205,3 +205,73 @@ export interface LogAnalysisResult {
   readonly stats: LogAnalysisStats;
   readonly anomalies: readonly LogAnomaly[];
 }
+
+export interface ReportWebsiteScanData {
+  readonly target: string | null;
+  readonly reachable: boolean;
+  readonly score: number | null;
+  readonly grade: string | null;
+  readonly summary: string | null;
+  readonly checks: readonly unknown[];
+}
+
+export interface ReportEmailScanData {
+  readonly subject: string | null;
+  readonly sender_email: string | null;
+  readonly predicted_label: string | null;
+  readonly risk_level: string | null;
+  readonly confidence: number | null;
+  readonly analyzer: string | null;
+  readonly indicators: readonly unknown[];
+}
+
+export interface ReportPasswordScanData {
+  readonly length: number | null;
+  readonly password_length: number | null;
+  readonly entropy_bits: number | null;
+  readonly strength_score: number | null;
+  readonly strength: string | null;
+  readonly strength_label: string | null;
+  readonly in_common_list: boolean | null;
+  readonly char_classes: readonly string[];
+  readonly recommendations: readonly unknown[];
+}
+
+export interface ReportLogScanData {
+  readonly parsed_lines: number | null;
+  readonly event_count: number | null;
+  readonly anomalies_detected: number | null;
+  readonly anomaly_count: number | null;
+  readonly severity: string | null;
+  readonly risk_level: string | null;
+  readonly analyzer: string | null;
+  readonly anomalies: readonly unknown[];
+}
+
+export interface ReportData {
+  readonly id: string;
+  readonly title: string;
+  readonly report_type: 'pdf';
+  readonly generated_at: string;
+  readonly website_scan: ReportWebsiteScanData | null;
+  readonly email_scan: ReportEmailScanData | null;
+  readonly password_scan: ReportPasswordScanData | null;
+  readonly log_scan: ReportLogScanData | null;
+  readonly summary: string | null;
+  readonly findings?: readonly unknown[];
+}
+
+export interface Report {
+  readonly id: string;
+  readonly user_id: string;
+  readonly title: string;
+  readonly report_type: 'pdf';
+  readonly storage_path: string;
+  readonly report_data: ReportData | null;
+  readonly created_at: string;
+  readonly signed_url: string | null;
+}
+
+export interface ReportGenerateRequest {
+  readonly title?: string;
+}
