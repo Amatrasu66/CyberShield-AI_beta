@@ -27,6 +27,21 @@ function buildUrl(path: string): string {
   return `${API_BASE_URL}${normalized}`;
 }
 
+async function handleResponse<T>(response: Response): Promise<T> {
+  const payload = (await response.json().catch(() => null)) as ApiResponse<T> | null;
+
+  if (payload === null) {
+    return undefined as T;
+  }
+  if (!response.ok || payload.success === false) {
+    if (payload.success === false) {
+      throw new ApiClientError(payload.message, response.status, payload.error.code, payload.error.details);
+    }
+    throw new ApiClientError(`Request failed with status ${response.status}`, response.status, 'HTTP_ERROR');
+  }
+  return (payload as ApiSuccessResponse<T>).data;
+}
+
 async function request<T>(path: string, method: 'GET' | 'POST', body?: unknown): Promise<T> {
   const token = await getAccessToken().catch(() => null);
   const headers: Record<string, string> = { Accept: 'application/json' };
@@ -48,21 +63,32 @@ async function request<T>(path: string, method: 'GET' | 'POST', body?: unknown):
     throw new ApiClientError('Network request failed', 0, 'NETWORK_ERROR', error);
   }
 
-  const payload = (await response.json().catch(() => null)) as ApiResponse<T> | null;
+  return handleResponse<T>(response);
+}
 
-  if (payload === null) {
-    return undefined as T;
+async function requestFormData<T>(path: string, formData: FormData): Promise<T> {
+  const token = await getAccessToken().catch(() => null);
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (token !== null) {
+    headers.Authorization = `Bearer ${token}`;
   }
-  if (!response.ok || payload.success === false) {
-    if (payload.success === false) {
-      throw new ApiClientError(payload.message, response.status, payload.error.code, payload.error.details);
-    }
-    throw new ApiClientError(`Request failed with status ${response.status}`, response.status, 'HTTP_ERROR');
+
+  let response: Response;
+  try {
+    response = await fetch(buildUrl(path), {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+  } catch (error) {
+    throw new ApiClientError('Network request failed', 0, 'NETWORK_ERROR', error);
   }
-  return (payload as ApiSuccessResponse<T>).data;
+
+  return handleResponse<T>(response);
 }
 
 export const apiClient = {
   get: <T>(path: string): Promise<T> => request<T>(path, 'GET'),
   post: <T>(path: string, body?: unknown): Promise<T> => request<T>(path, 'POST', body),
+  postForm: <T>(path: string, formData: FormData): Promise<T> => requestFormData<T>(path, formData),
 };

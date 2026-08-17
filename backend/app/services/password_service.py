@@ -13,6 +13,7 @@ Security guarantees:
 
 import math
 import re
+import secrets
 import string
 
 from ..database import get_user_supabase_client
@@ -33,7 +34,7 @@ GUESSES_PER_SECOND = 10_000_000_000
 COMMON_WEAK_PASSWORDS = {
     "password", "123456", "12345678", "123456789", "qwerty", "abc123",
     "password1", "letmein", "admin", "welcome", "monkey", "dragon",
-    "1234", "12345", "111111", "iloveyou", "sunshine", "princess",
+    "1234", "1235", "111111", "iloveyou", "sunshine", "princess",
     "football", "baseball", "superman", "trustno1", "123123",
 }
 
@@ -45,6 +46,18 @@ SEQUENCE_PATTERNS = [
 ]
 
 REPEATED_RUN_REGEX = re.compile(r"(.)\1{2,}")
+
+# Keyboard layout patterns for detecting common keyboard walks
+KEYBOARD_PATTERNS = [
+    re.compile(r"qwerty|asdfgh|zxcvbn|qwertyuiop|asdf|zxcv"),
+    re.compile(r"poiuy|lkjhg|mnbvc"),
+    re.compile(r"1234567890|0987654321"),
+]
+
+# Common personal info patterns
+YEAR_PATTERN = re.compile(r"(19|20)\d{2}")
+DATE_PATTERN = re.compile(r"\d{1,2}[-/]\d{1,2}[-/]\d{2,4}")
+PHONE_PATTERN = re.compile(r"(\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}")
 
 
 class PasswordService:
@@ -73,11 +86,17 @@ class PasswordService:
             "strength_score": None,
             "strength": None,
             "recommendations": [],
+            "weaknesses": [],
+            "score_breakdown": [],
+            "security_checklist": [],
         }
 
         score = _strength_score(password, analysis)
         analysis["strength_score"] = score
         analysis["strength"] = _rating(score)
+        analysis["weaknesses"] = _detect_weaknesses(password, analysis)
+        analysis["score_breakdown"] = _score_breakdown(password, analysis, score)
+        analysis["security_checklist"] = _security_checklist(password, analysis)
         analysis["recommendations"] = _recommendations(password, analysis, score)
 
         # Order recommendations from most to least impactful.
@@ -285,3 +304,447 @@ def _recommendations(password: str, analysis: dict, score: int) -> list:
         add("Consider using a passphrase or password manager for unique credentials.", 7)
 
     return recommendations
+
+
+def _detect_weaknesses(password: str, analysis: dict) -> list:
+    """Detect specific weakness patterns in the password."""
+    weaknesses = []
+    lowered = password.lower()
+    length = analysis["length"]
+
+    # Too short
+    if length < 8:
+        weaknesses.append({
+            "code": "TOO_SHORT",
+            "severity": "high",
+            "title": "Password too short",
+            "message": f"Password is only {length} characters long.",
+            "recommendation": "Use at least 12 characters; longer is stronger."
+        })
+    elif length < 12:
+        weaknesses.append({
+            "code": "SHORT",
+            "severity": "medium",
+            "title": "Password could be longer",
+            "message": f"Password is {length} characters; 12+ is recommended.",
+            "recommendation": "Increase length to 12 or more characters."
+        })
+
+    # Common password
+    if analysis["in_common_list"]:
+        weaknesses.append({
+            "code": "COMMON_PASSWORD",
+            "severity": "critical",
+            "title": "Common password detected",
+            "message": "This password appears in known weak/common password lists.",
+            "recommendation": "Choose a unique password not found in breach databases."
+        })
+
+    # Dictionary-like word detection (simple heuristic: common words > 4 chars)
+    if _has_dictionary_word(lowered):
+        weaknesses.append({
+            "code": "DICTIONARY_WORD",
+            "severity": "medium",
+            "title": "Dictionary-like word detected",
+            "message": "The password contains a common dictionary word.",
+            "recommendation": "Avoid common words; use a passphrase of random words instead."
+        })
+
+    # Repeated characters (aaa, 111, etc.)
+    if _has_repeated_run(password):
+        weaknesses.append({
+            "code": "REPEATED_CHARACTERS",
+            "severity": "medium",
+            "title": "Repeated characters",
+            "message": "The password contains 3 or more identical characters in a row.",
+            "recommendation": "Avoid runs of the same character (e.g., 'aaa', '111')."
+        })
+
+    # Repeated substrings (e.g., "abcabc", "123123")
+    repeated_substring = _detect_repeated_substring(password)
+    if repeated_substring:
+        weaknesses.append({
+            "code": "REPEATED_SUBSTRING",
+            "severity": "medium",
+            "title": "Repeated substring pattern",
+            "message": f"The password contains a repeated substring: '{repeated_substring}'.",
+            "recommendation": "Avoid repeating sequences of characters."
+        })
+
+    # Sequential characters (123, abc, etc.)
+    if _detect_sequences(password):
+        weaknesses.append({
+            "code": "SEQUENTIAL_PATTERN",
+            "severity": "medium",
+            "title": "Sequential pattern detected",
+            "message": "The password contains sequential characters (e.g., '123', 'abc').",
+            "recommendation": "Avoid predictable sequences like '123', 'abc', or keyboard runs."
+        })
+
+    # Keyboard patterns
+    if _detect_keyboard_pattern(lowered):
+        weaknesses.append({
+            "code": "KEYBOARD_PATTERN",
+            "severity": "medium",
+            "title": "Keyboard pattern detected",
+            "message": "The password contains a common keyboard walk pattern.",
+            "recommendation": "Avoid keyboard patterns like 'qwerty', 'asdfgh', or 'zxcvbn'."
+        })
+
+    # Predictable year suffix (e.g., 2024, 2023)
+    year_match = YEAR_PATTERN.search(password)
+    if year_match:
+        year = int(year_match.group())
+        if 1900 <= year <= 2030:
+            weaknesses.append({
+                "code": "PREDICTABLE_YEAR",
+                "severity": "medium",
+                "title": "Predictable year suffix",
+                "message": f"The password contains a year-like number ({year}).",
+                "recommendation": "Avoid using years, birth years, or current years in passwords."
+            })
+
+    # Date-like patterns
+    if DATE_PATTERN.search(password):
+        weaknesses.append({
+            "code": "DATE_PATTERN",
+            "severity": "medium",
+            "title": "Date-like pattern",
+            "message": "The password contains a date-like sequence.",
+            "recommendation": "Avoid using dates (birthdays, anniversaries) in passwords."
+        })
+
+    # Phone number-like patterns
+    if PHONE_PATTERN.search(password):
+        weaknesses.append({
+            "code": "PHONE_PATTERN",
+            "severity": "low",
+            "title": "Phone number pattern",
+            "message": "The password contains a sequence resembling a phone number.",
+            "recommendation": "Avoid using phone numbers in passwords."
+        })
+
+    # Simple substitutions (leetspeak)
+    if _has_simple_substitution(lowered):
+        weaknesses.append({
+            "code": "SIMPLE_SUBSTITUTION",
+            "severity": "low",
+            "title": "Simple character substitution",
+            "message": "The password uses predictable substitutions (e.g., 'a'->'@', 'e'->'3').",
+            "recommendation": "Simple substitutions like '@' for 'a' add little security."
+        })
+
+    # Excessive predictability (low entropy relative to length)
+    if analysis["entropy_bits"] < length * 2.5 and length >= 8:
+        weaknesses.append({
+            "code": "EXCESSIVE_PREDICTABILITY",
+            "severity": "medium",
+            "title": "Low entropy for length",
+            "message": "The password has lower entropy than expected for its length.",
+            "recommendation": "Increase randomness; avoid patterns and dictionary words."
+        })
+
+    return weaknesses
+
+
+def _has_dictionary_word(password: str) -> bool:
+    """Simple check for common dictionary words (length >= 5)."""
+    common_words = {
+        "password", "welcome", "admin", "login", "access", "secure", "secret",
+        "monkey", "dragon", "sunshine", "princess", "football", "baseball",
+        "superman", "batman", "starwars", "master", "shadow", "hunter",
+        "michael", "jennifer", "jessica", "ashley", "amanda", "sarah",
+        "david", "john", "james", "robert", "william", "joseph",
+        "computer", "internet", "network", "system", "server", "client",
+        "database", "software", "hardware", "keyboard", "monitor", "printer"
+    }
+    for word in common_words:
+        if len(word) >= 5 and word in password:
+            return True
+    return False
+
+
+def _detect_repeated_substring(password: str) -> str | None:
+    """Detect repeated substrings of length >= 3."""
+    length = len(password)
+    for sub_len in range(3, length // 2 + 1):
+        for i in range(length - 2 * sub_len + 1):
+            substr = password[i:i + sub_len]
+            if password.count(substr) >= 2:
+                return substr
+    return None
+
+
+def _detect_keyboard_pattern(password: str) -> bool:
+    """Detect common keyboard walk patterns."""
+    return any(pattern.search(password) for pattern in KEYBOARD_PATTERNS)
+
+
+def _has_simple_substitution(password: str) -> bool:
+    """Detect simple leetspeak substitutions."""
+    substitutions = [
+        ('a', '@'), ('a', '4'),
+        ('e', '3'),
+        ('i', '1'), ('i', '!'),
+        ('o', '0'),
+        ('s', '$'), ('s', '5'),
+        ('t', '7'), ('t', '+'),
+        ('l', '1'),
+        ('g', '9'),
+        ('b', '8'),
+    ]
+    # Check if password has leetspeak but would be a common word without it
+    normalized = password
+    for char, sub in substitutions:
+        normalized = normalized.replace(sub, char)
+    return _has_dictionary_word(normalized) and normalized != password
+
+
+def _score_breakdown(password: str, analysis: dict, score: int) -> list:
+    """Generate transparent score breakdown based on scoring factors."""
+    length = analysis["length"]
+    classes = analysis["classes_used"]
+    bits = analysis["entropy_bits"]
+    in_common = analysis["in_common_list"]
+
+    breakdown = []
+
+    # Length factor (0-30 points in original scoring)
+    length_score = min(30, int(length * 1.5))
+    breakdown.append({
+        "factor": "Length",
+        "score": min(100, int(length_score / 30 * 100)),
+        "status": "good" if length >= 12 else ("warning" if length >= 8 else "danger"),
+        "details": f"{length} characters"
+    })
+
+    # Character variety factor (0-30 points)
+    variety_score = min(30, max(0, classes - 1) * 10)
+    breakdown.append({
+        "factor": "Character Variety",
+        "score": min(100, int(variety_score / 30 * 100)) if classes > 1 else 0,
+        "status": "good" if classes >= 3 else ("warning" if classes >= 2 else "danger"),
+        "details": f"{classes}/4 character classes"
+    })
+
+    # Entropy factor (0-25 points)
+    if bits >= 80:
+        entropy_score = 25
+        entropy_status = "good"
+    elif bits >= 60:
+        entropy_score = 20
+        entropy_status = "good"
+    elif bits >= 40:
+        entropy_score = 15
+        entropy_status = "warning"
+    elif bits >= 28:
+        entropy_score = 10
+        entropy_status = "warning"
+    else:
+        entropy_score = 0
+        entropy_status = "danger"
+    breakdown.append({
+        "factor": "Entropy",
+        "score": min(100, int(entropy_score / 25 * 100)),
+        "status": entropy_status,
+        "details": f"{bits:.1f} bits"
+    })
+
+    # Common password exposure (penalty up to -30)
+    exposure_score = 0 if in_common else 100
+    breakdown.append({
+        "factor": "Common Password Exposure",
+        "score": exposure_score,
+        "status": "danger" if in_common else "good",
+        "details": "Found in common lists" if in_common else "Not in common lists"
+    })
+
+    # Pattern penalties
+    pattern_penalty = 0
+    if _detect_sequences(password):
+        pattern_penalty += 10
+    if _has_repeated_run(password):
+        pattern_penalty += 10
+    pattern_score = max(0, 100 - pattern_penalty)
+    breakdown.append({
+        "factor": "Predictable Patterns",
+        "score": pattern_score,
+        "status": "good" if pattern_penalty == 0 else ("warning" if pattern_penalty <= 10 else "danger"),
+        "details": "No predictable patterns" if pattern_penalty == 0 else f"{pattern_penalty} points in penalties"
+    })
+
+    return breakdown
+
+
+def _security_checklist(password: str, analysis: dict) -> list:
+    """Generate a structured security checklist.
+
+    Objectively analyzable conditions carry ``status`` ``"passed"`` or
+    ``"failed"`` with a boolean ``passed`` value. Advisory guidance that cannot
+    be verified from the password alone (password reuse, password-manager
+    usage, MFA configuration) carries ``status`` ``"advisory"`` with ``passed``
+    ``None``, so clients never mistake a recommendation for a verified check.
+    """
+    length = analysis["length"]
+    in_common = analysis["in_common_list"]
+    weaknesses = _detect_weaknesses(password, analysis)
+
+    checklist = []
+
+    # Sufficient length
+    checklist.append({
+        "item": "Sufficient length (12+ characters)",
+        "status": "passed" if length >= 12 else "failed",
+        "passed": length >= 12,
+        "details": f"Current length: {length} characters"
+    })
+
+    # Not commonly used
+    checklist.append({
+        "item": "Not a commonly used password",
+        "status": "passed" if not in_common else "failed",
+        "passed": not in_common,
+        "details": "Found in common password lists" if in_common else "Not found in common lists"
+    })
+
+    # No obvious predictable patterns
+    has_patterns = any(w["code"] in ("SEQUENTIAL_PATTERN", "KEYBOARD_PATTERN", "REPEATED_CHARACTERS", "REPEATED_SUBSTRING") for w in weaknesses)
+    checklist.append({
+        "item": "No obvious predictable patterns",
+        "status": "passed" if not has_patterns else "failed",
+        "passed": not has_patterns,
+        "details": "Predictable patterns detected" if has_patterns else "No predictable patterns found"
+    })
+
+    # No obvious personal-information pattern
+    has_personal = any(w["code"] in ("PREDICTABLE_YEAR", "DATE_PATTERN", "PHONE_PATTERN") for w in weaknesses)
+    checklist.append({
+        "item": "No obvious personal-information pattern",
+        "status": "passed" if not has_personal else "failed",
+        "passed": not has_personal,
+        "details": "Possible personal-information pattern detected" if has_personal else "No personal-information patterns detected"
+    })
+
+    # Advisory items. These are recommendations the tool cannot verify from the
+    # password alone, so they must never be reported as a passed check.
+    checklist.append({
+        "item": "Use a unique password for each account",
+        "status": "advisory",
+        "passed": None,
+        "details": "Recommendation — this tool cannot determine whether this password is reused elsewhere. Always use a unique password for each account."
+    })
+
+    checklist.append({
+        "item": "Consider using a password manager",
+        "status": "advisory",
+        "passed": None,
+        "details": "Recommendation — this tool cannot verify how you store credentials. A password manager helps generate and store unique, strong passwords."
+    })
+
+    checklist.append({
+        "item": "Enable multi-factor authentication (MFA)",
+        "status": "advisory",
+        "passed": None,
+        "details": "Recommendation — this tool cannot inspect your account's MFA configuration. MFA adds a critical second layer of security beyond the password."
+    })
+
+    return checklist
+
+
+# ============================================================
+# Password Generation (Phase 2)
+# ============================================================
+
+# Curated wordlist for passphrase generation (EFF-style, ~7776 words would be ideal,
+# but we use a smaller curated set for practicality). Words are 3-8 chars, common,
+# distinct, and easy to spell.
+PASSPHRASE_WORDLIST = [
+    "cactus", "orbit", "lantern", "velvet", "river", "anchor", "bamboo", "crystal",
+    "diamond", "eagle", "falcon", "galaxy", "harbor", "island", "jungle", "kayak",
+    "lobster", "marble", "nebula", "ocean", "pebble", "quasar", "rainbow", "sapphire",
+    "tundra", "unicorn", "volcano", "willow", "xenon", "zephyr", "alpine", "breeze",
+    "canyon", "delta", "ember", "frost", "glacier", "horizon", "infinity", "jasmine",
+    "kelp", "lagoon", "meadow", "northern", "opal", "prairie", "quartz", "ridge",
+    "summit", "tidal", "upland", "valley", "waterfall", "yarrow", "zenith", "amber",
+    "blossom", "coral", "driftwood", "evergreen", "fern", "geyser", "heather", "ivory",
+    "jade", "kelp", "lotus", "magnolia", "nightfall", "orchid", "pinecone", "quill",
+    "rosewood", "sequoia", "thistle", "undertow", "vine", "wildflower", "yucca", "zephyr",
+    "acorn", "bluebird", "crimson", "dewdrop", "firefly", "goldenrod", "hummingbird",
+    "indigo", "juniper", "kiwi", "larkspur", "moonlight", "nectar", "owlet", "petal",
+    "quince", "redwood", "starlight", "tigerlily", "umbra", "violet", "whirlwind",
+    "xylophone", "yesteryear", "zinnia", "apple", "blossom", "cherry", "daisy",
+    "elderberry", "fig", "grape", "honeysuckle", "iris", "jasmine", "kiwi", "lavender",
+    "marigold", "nutmeg", "olive", "peony", "quince", "rosemary", "sage", "thyme",
+    "umbrella", "vanilla", "wisteria", "xylopia", "yam", "zucchini", "acorn", "birch",
+    "cedar", "dogwood", "elm", "fir", "ginkgo", "hickory", "ironwood", "juniper",
+    "kapok", "laurel", "maple", "oak", "palm", "quercus", "redwood", "spruce",
+    "tamarack", "upas", "vine", "walnut", "xanthium", "yew", "zelkova", "anchor",
+    "beacon", "compass", "drift", "equator", "flint", "granite", "harbor", "iceberg",
+    "jetstream", "knot", "latitude", "meridian", "navigate", "oasis", "peak", "quay",
+    "reef", "shore", "tide", "undertow", "voyage", "wave", "xebec", "yardarm", "zenith"
+]
+
+# Character set for random password generation (avoiding ambiguous chars: l, 1, I, O, 0)
+RANDOM_PASSWORD_CHARS = (
+    "abcdefghijkmnopqrstuvwxyz"  # lowercase without l
+    "ABCDEFGHJKLMNPQRSTUVWXYZ"   # uppercase without I, O
+    "23456789"                    # digits without 0, 1
+    "!@#$%^&*_-+=?"               # special chars
+)
+
+
+class PasswordGenerator:
+    """Cryptographically secure password generation."""
+
+    @staticmethod
+    def generate_passphrase(words: int = 5, delimiter: str = "-") -> dict:
+        """
+        Generate a secure passphrase using cryptographically random word selection.
+
+        Args:
+            words: Number of words (4-6)
+            delimiter: Separator between words
+
+        Returns:
+            Dict with generated passphrase and metadata
+        """
+        if not 4 <= words <= 6:
+            raise ValueError("words must be between 4 and 6")
+
+        # Use secrets.SystemRandom for cryptographically secure selection
+        rng = secrets.SystemRandom()
+        selected_words = [rng.choice(PASSPHRASE_WORDLIST) for _ in range(words)]
+
+        passphrase = delimiter.join(selected_words)
+
+        return {
+            "password": passphrase,
+            "type": "passphrase",
+            "words": words,
+            "delimiter": delimiter,
+            "length": len(passphrase),
+        }
+
+    @staticmethod
+    def generate_random_password(length: int = 20) -> dict:
+        """
+        Generate a secure random password using cryptographically secure RNG.
+
+        Args:
+            length: Password length (8-64)
+
+        Returns:
+            Dict with generated password and metadata
+        """
+        if not 8 <= length <= 64:
+            raise ValueError("length must be between 8 and 64")
+
+        rng = secrets.SystemRandom()
+        password = "".join(rng.choice(RANDOM_PASSWORD_CHARS) for _ in range(length))
+
+        return {
+            "password": password,
+            "type": "random",
+            "length": length,
+            "charset_size": len(RANDOM_PASSWORD_CHARS),
+        }

@@ -3,7 +3,7 @@
 import pytest
 
 from app.errors import ServiceUnavailableError
-from app.services.password_service import PasswordService
+from app.services.password_service import PasswordService, PasswordGenerator
 
 
 class TestPasswordService:
@@ -45,6 +45,115 @@ class TestPasswordService:
         secret = "S3cr3t!Pa55word"
         result = PasswordService.analyze_password(secret)
         assert secret not in str(result)
+
+
+class TestWeaknessDetection:
+    def test_short_password_weakness(self):
+        result = PasswordService.analyze_password("abc")
+        weaknesses = result["weaknesses"]
+        assert any(w["code"] == "TOO_SHORT" for w in weaknesses)
+
+    def test_common_password_weakness(self):
+        result = PasswordService.analyze_password("password")
+        weaknesses = result["weaknesses"]
+        assert any(w["code"] == "COMMON_PASSWORD" for w in weaknesses)
+
+    def test_repeated_characters_weakness(self):
+        result = PasswordService.analyze_password("aaa12345")
+        weaknesses = result["weaknesses"]
+        assert any(w["code"] == "REPEATED_CHARACTERS" for w in weaknesses)
+
+    def test_repeated_substring_weakness(self):
+        result = PasswordService.analyze_password("abcabc123")
+        weaknesses = result["weaknesses"]
+        assert any(w["code"] == "REPEATED_SUBSTRING" for w in weaknesses)
+
+    def test_sequential_pattern_weakness(self):
+        result = PasswordService.analyze_password("abc12345")
+        weaknesses = result["weaknesses"]
+        assert any(w["code"] == "SEQUENTIAL_PATTERN" for w in weaknesses)
+
+    def test_keyboard_pattern_weakness(self):
+        result = PasswordService.analyze_password("qwerty123")
+        weaknesses = result["weaknesses"]
+        assert any(w["code"] == "KEYBOARD_PATTERN" for w in weaknesses)
+
+    def test_predictable_year_weakness(self):
+        result = PasswordService.analyze_password("mypass2024")
+        weaknesses = result["weaknesses"]
+        assert any(w["code"] == "PREDICTABLE_YEAR" for w in weaknesses)
+
+    def test_possible_personal_info_weakness(self):
+        result = PasswordService.analyze_password("john1990")
+        weaknesses = result["weaknesses"]
+        assert any(w["code"] in ("PREDICTABLE_YEAR", "DATE_PATTERN", "PHONE_PATTERN") for w in weaknesses)
+
+    def test_score_breakdown_structure(self):
+        result = PasswordService.analyze_password("CorrectHorseBatteryStaple!9")
+        breakdown = result["score_breakdown"]
+        assert isinstance(breakdown, list)
+        assert len(breakdown) >= 5
+        for factor in breakdown:
+            assert "factor" in factor
+            assert "score" in factor
+            assert "status" in factor
+            assert factor["status"] in ("good", "warning", "danger")
+
+    def test_security_checklist_structure(self):
+        result = PasswordService.analyze_password("CorrectHorseBatteryStaple!9")
+        checklist = result["security_checklist"]
+        assert isinstance(checklist, list)
+        assert len(checklist) >= 6
+        for item in checklist:
+            assert "item" in item
+            assert "passed" in item
+            assert "status" in item
+            assert item["status"] in ("passed", "failed", "advisory")
+            assert "details" in item
+            if item["status"] == "advisory":
+                assert item["passed"] is None
+            else:
+                assert isinstance(item["passed"], bool)
+
+    def test_advisory_items_are_not_reported_as_passed(self):
+        result = PasswordService.analyze_password("CorrectHorseBatteryStaple!9")
+        checklist = result["security_checklist"]
+        advisory = [item for item in checklist if item["status"] == "advisory"]
+        advisory_items = {
+            "Use a unique password for each account",
+            "Consider using a password manager",
+            "Enable multi-factor authentication (MFA)",
+        }
+        assert {item["item"] for item in advisory} == advisory_items
+        assert all(item["passed"] is None for item in advisory)
+        assert not any(item["status"] == "passed" for item in advisory)
+        for item in advisory:
+            assert "cannot" in item["details"].lower() or "Recommendation" in item["details"]
+
+    def test_existing_behavior_compatible(self):
+        # Ensure all existing fields are still present
+        result = PasswordService.analyze_password("Tr0ub4dor&3xample!Secure")
+        assert "length" in result
+        assert "char_classes" in result
+        assert "uppercase" in result
+        assert "lowercase" in result
+        assert "digits" in result
+        assert "special" in result
+        assert "classes_used" in result
+        assert "entropy_bits" in result
+        assert "crack_time_estimate" in result
+        assert "in_common_list" in result
+        assert "strength_score" in result
+        assert "strength" in result
+        assert "recommendations" in result
+
+    def test_plaintext_never_persisted(self, fake_supabase):
+        secret = "S3cr3t!Pa55word"
+        PasswordService.analyze_password(secret, user_id="33333333-3333-4333-8333-333333333333")
+        payload = fake_supabase.inserts["password_scans"][-1]
+        assert secret not in str(payload)
+        assert "hash" not in payload
+        assert "bcrypt" not in str(payload).lower()
 
 
 class TestPasswordEndpoint:
@@ -209,3 +318,225 @@ class TestPasswordPersistenceEndpoint:
         body = response.get_json()
         assert body["success"] is False
         assert body["error"]["code"] == "SERVICE_UNAVAILABLE"
+
+
+class TestPasswordGenerator:
+    def test_passphrase_default_words(self):
+        result = PasswordGenerator.generate_passphrase()
+        assert result["type"] == "passphrase"
+        assert result["words"] == 5
+        assert result["delimiter"] == "-"
+        assert len(result["password"]) > 0
+        assert result["password"].count("-") == 4
+
+    def test_passphrase_custom_words(self):
+        for words in [4, 5, 6]:
+            result = PasswordGenerator.generate_passphrase(words=words)
+            assert result["words"] == words
+            assert result["password"].count("-") == words - 1
+
+    def test_passphrase_custom_delimiter(self):
+        result = PasswordGenerator.generate_passphrase(words=4, delimiter=".")
+        assert result["delimiter"] == "."
+        assert result["password"].count(".") == 3
+
+    def test_passphrase_uniqueness(self):
+        # Generate multiple passphrases and ensure they're different
+        passphrases = set()
+        for _ in range(20):
+            result = PasswordGenerator.generate_passphrase(words=5)
+            passphrases.add(result["password"])
+        # With ~180 words and 5 words, collisions are extremely unlikely
+        assert len(passphrases) == 20
+
+    def test_passphrase_invalid_word_count(self):
+        with pytest.raises(ValueError):
+            PasswordGenerator.generate_passphrase(words=3)
+        with pytest.raises(ValueError):
+            PasswordGenerator.generate_passphrase(words=7)
+
+    def test_random_password_default_length(self):
+        result = PasswordGenerator.generate_random_password()
+        assert result["type"] == "random"
+        assert result["length"] == 20
+        assert len(result["password"]) == 20
+
+    def test_random_password_custom_length(self):
+        for length in [8, 16, 32, 64]:
+            result = PasswordGenerator.generate_random_password(length=length)
+            assert result["length"] == length
+            assert len(result["password"]) == length
+
+    def test_random_password_variability(self):
+        passwords = set()
+        for _ in range(20):
+            result = PasswordGenerator.generate_random_password(length=20)
+            passwords.add(result["password"])
+        assert len(passwords) == 20
+
+    def test_random_password_invalid_length(self):
+        with pytest.raises(ValueError):
+            PasswordGenerator.generate_random_password(length=7)
+        with pytest.raises(ValueError):
+            PasswordGenerator.generate_random_password(length=65)
+
+    def test_random_password_charset(self):
+        result = PasswordGenerator.generate_random_password(length=64)
+        # All characters should be from the allowed charset
+        allowed = set(
+            "abcdefghijkmnopqrstuvwxyz"
+            "ABCDEFGHJKLMNPQRSTUVWXYZ"
+            "23456789"
+            "!@#$%^&*_-+=?"
+        )
+        assert all(c in allowed for c in result["password"])
+
+    def test_generated_password_never_persisted(self, fake_supabase):
+        # Generate passwords and verify they're not persisted
+        passphrase = PasswordGenerator.generate_passphrase(words=5)
+        random_pwd = PasswordGenerator.generate_random_password(length=20)
+        
+        # Neither should appear in any persisted data
+        for table_data in fake_supabase.inserts.values():
+            for row in table_data:
+                assert passphrase["password"] not in str(row)
+                assert random_pwd["password"] not in str(row)
+
+
+class TestPasswordGenerationEndpoint:
+    def test_generate_passphrase_endpoint(self, client, auth_headers):
+        response = client.post(
+            "/api/password/generate",
+            json={"type": "passphrase", "words": 5},
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+        body = response.get_json()
+        assert body["success"] is True
+        data = body["data"]
+        assert data["type"] == "passphrase"
+        assert data["words"] == 5
+        assert "password" in data
+        assert data["password"].count("-") == 4
+
+    def test_generate_passphrase_custom_words(self, client, auth_headers):
+        response = client.post(
+            "/api/password/generate",
+            json={"type": "passphrase", "words": 4},
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+        body = response.get_json()
+        data = body["data"]
+        assert data["words"] == 4
+        assert data["password"].count("-") == 3
+
+    def test_generate_random_password_endpoint(self, client, auth_headers):
+        response = client.post(
+            "/api/password/generate",
+            json={"type": "random", "length": 20},
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+        body = response.get_json()
+        data = body["data"]
+        assert data["type"] == "random"
+        assert data["length"] == 20
+        assert len(data["password"]) == 20
+
+    def test_generate_random_password_custom_length(self, client, auth_headers):
+        response = client.post(
+            "/api/password/generate",
+            json={"type": "random", "length": 32},
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+        body = response.get_json()
+        data = body["data"]
+        assert data["length"] == 32
+        assert len(data["password"]) == 32
+
+    def test_generate_invalid_type(self, client, auth_headers):
+        response = client.post(
+            "/api/password/generate",
+            json={"type": "invalid"},
+            headers=auth_headers,
+        )
+        assert response.status_code == 400
+        body = response.get_json()
+        assert body["success"] is False
+        assert body["error"]["code"] == "VALIDATION_ERROR"
+
+    def test_generate_invalid_word_count(self, client, auth_headers):
+        response = client.post(
+            "/api/password/generate",
+            json={"type": "passphrase", "words": 3},
+            headers=auth_headers,
+        )
+        assert response.status_code == 400
+        body = response.get_json()
+        assert body["success"] is False
+        assert body["error"]["code"] == "VALIDATION_ERROR"
+
+    def test_generate_invalid_length(self, client, auth_headers):
+        response = client.post(
+            "/api/password/generate",
+            json={"type": "random", "length": 7},
+            headers=auth_headers,
+        )
+        assert response.status_code == 400
+        body = response.get_json()
+        assert body["success"] is False
+        assert body["error"]["code"] == "VALIDATION_ERROR"
+
+    def test_generate_missing_type(self, client, auth_headers):
+        response = client.post(
+            "/api/password/generate",
+            json={"words": 5},
+            headers=auth_headers,
+        )
+        assert response.status_code == 400
+        body = response.get_json()
+        assert body["success"] is False
+        assert body["error"]["code"] == "VALIDATION_ERROR"
+
+    def test_generate_requires_auth(self, client):
+        response = client.post(
+            "/api/password/generate",
+            json={"type": "passphrase", "words": 5},
+        )
+        assert response.status_code == 401
+
+    def test_generated_password_not_persisted(self, client, auth_headers, fake_supabase):
+        response = client.post(
+            "/api/password/generate",
+            json={"type": "passphrase", "words": 5},
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+        body = response.get_json()
+        generated = body["data"]["password"]
+
+        # Verify nothing was persisted
+        assert "password_scans" not in fake_supabase.inserts
+        # Or if it was called, the generated password is not in it
+        for table_data in fake_supabase.inserts.values():
+            for row in table_data:
+                assert generated not in str(row)
+
+    def test_existing_analysis_unchanged(self, client, auth_headers):
+        # Ensure the analyze endpoint still works correctly
+        response = client.post(
+            "/api/password/analyze",
+            json={"password": "CorrectHorseBatteryStaple!9"},
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+        body = response.get_json()
+        assert body["success"] is True
+        data = body["data"]
+        assert "strength" in data
+        assert "entropy_bits" in data
+        assert "weaknesses" in data
+        assert "score_breakdown" in data
+        assert "security_checklist" in data

@@ -82,6 +82,9 @@ class Config:
     # --- Input limits -----------------------------------------------------
     PASSWORD_MAX_LENGTH = _env_int("PASSWORD_MAX_LENGTH", 4096)
     EMAIL_MAX_LENGTH = _env_int("EMAIL_MAX_LENGTH", 50_000)
+    # Maximum size of an uploaded email PDF in bytes. Currently matches
+    # MAX_CONTENT_LENGTH (1 MB); the effective ceiling is the smaller of the two.
+    EMAIL_PDF_MAX_SIZE = _env_int("EMAIL_PDF_MAX_SIZE", 1_000_000)
     LOG_MAX_LENGTH = _env_int("LOG_MAX_LENGTH", 500_000)
     LOG_MAX_LINES = _env_int("LOG_MAX_LINES", 10_000)
     CRYPTO_MAX_INPUT_LENGTH = _env_int("CRYPTO_MAX_INPUT_LENGTH", 100_000)

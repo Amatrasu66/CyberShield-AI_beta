@@ -1,9 +1,51 @@
 """Tests for the phishing email detector (deterministic placeholder)."""
 
+from io import BytesIO
+
 import pytest
 
 from app.errors import ServiceUnavailableError
 from app.services.email_service import EmailService
+
+
+def _xml_escape(text: str) -> str:
+    return (
+        text.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
+def _build_text_pdf_bytes(text: str) -> bytes:
+    """Render ``text`` into a real, valid PDF (using the existing reportlab dep)."""
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.platypus import Paragraph, SimpleDocTemplate
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pageCompression=0)
+    style = getSampleStyleSheet()["BodyText"]
+    style.wordWrap = "CJK"
+    story = [Paragraph(_xml_escape(text).replace("\n", "<br/>"), style)]
+    doc.build(story)
+    pdf = buffer.getvalue()
+    buffer.close()
+    return pdf
+
+
+def _build_blank_pdf_bytes() -> bytes:
+    """A valid PDF with no text layer (simulates a scanned/image-only PDF)."""
+    from reportlab.lib.pagesizes import LETTER
+    from reportlab.pdfgen import canvas as pdf_canvas
+
+    buffer = BytesIO()
+    c = pdf_canvas.Canvas(buffer, pagesize=LETTER)
+    c.setFillColorRGB(0.1, 0.2, 0.6)
+    c.rect(100, 500, 220, 120, stroke=0, fill=1)
+    c.showPage()
+    c.save()
+    pdf = buffer.getvalue()
+    buffer.close()
+    return pdf
 
 
 class TestEmailService:
@@ -191,3 +233,150 @@ class TestEmailPersistenceEndpoint:
         body = response.get_json()
         assert body["success"] is False
         assert body["error"]["code"] == "SERVICE_UNAVAILABLE"
+
+
+def _pdf_upload(pdf_bytes: bytes, filename: str):
+    return {"file": (BytesIO(pdf_bytes), filename, "application/pdf")}
+
+
+class TestEmailPDFEndpoint:
+    """PDF uploads share the existing analyzer, auth, and response envelope."""
+
+    def test_valid_pdf_extracts_text_and_analyzes(self, client, auth_headers):
+        pdf = _build_text_pdf_bytes(
+            "Subject: Account Suspended\n"
+            "From: security@bank.com\n\n"
+            "Dear user, verify your password now. Click here immediately. "
+            "Visit http://verify-account.tk now!!"
+        )
+        assert pdf.startswith(b"%PDF-")
+        response = client.post(
+            "/api/email/analyze", data=_pdf_upload(pdf, "email.pdf"), headers=auth_headers
+        )
+        assert response.status_code == 200
+        body = response.get_json()
+        assert body["success"] is True
+        result = body["data"]
+        assert result["is_phishing"] is True
+        assert result["analyzer"] == "deterministic-heuristic-placeholder"
+        names = {i["name"] for i in result["indicators"]}
+        assert "Urgency language" in names
+        assert "Suspicious link domains" in names
+
+    def test_extracted_pdf_content_reaches_existing_analyzer_with_user_scoping(
+        self, client, auth_headers, auth_user_id, fake_supabase
+    ):
+        pdf = _build_text_pdf_bytes(
+            "Subject: Account Suspended\n"
+            "From: security@bank.com\n\n"
+            "Dear user, verify your password now. Click here. "
+            "Visit http://verify-account.tk now!!"
+        )
+        response = client.post(
+            "/api/email/analyze", data=_pdf_upload(pdf, "email.pdf"), headers=auth_headers
+        )
+        assert response.status_code == 200
+        payload = fake_supabase.inserts["email_scans"][-1]
+        assert payload["user_id"] == auth_user_id
+        assert payload["subject"] == "Account Suspended"
+        assert payload["sender_email"] == "security@bank.com"
+        assert payload["predicted_label"] == "phishing"
+
+    def test_text_and_pdf_share_identical_response_structure(self, client, auth_headers):
+        text = "Click here urgently and verify your password now. Act immediately."
+        pdf = _build_text_pdf_bytes(text)
+
+        text_response = client.post(
+            "/api/email/analyze", json={"content": text}, headers=auth_headers
+        )
+        pdf_response = client.post(
+            "/api/email/analyze", data=_pdf_upload(pdf, "email.pdf"), headers=auth_headers
+        )
+        assert text_response.status_code == 200
+        assert pdf_response.status_code == 200
+        text_data = text_response.get_json()["data"]
+        pdf_data = pdf_response.get_json()["data"]
+        assert set(text_data) == set(pdf_data)
+        assert text_data == pdf_data
+
+    def test_empty_pdf_rejected(self, client, auth_headers):
+        response = client.post(
+            "/api/email/analyze", data=_pdf_upload(b"", "empty.pdf"), headers=auth_headers
+        )
+        assert response.status_code == 400
+        body = response.get_json()
+        assert body["success"] is False
+        assert body["error"]["code"] == "VALIDATION_ERROR"
+
+    def test_pdf_with_no_extractable_text_rejected(self, client, auth_headers):
+        pdf = _build_blank_pdf_bytes()
+        assert pdf.startswith(b"%PDF-")
+        response = client.post(
+            "/api/email/analyze", data=_pdf_upload(pdf, "scan-only.pdf"), headers=auth_headers
+        )
+        assert response.status_code == 400
+        body = response.get_json()
+        assert body["success"] is False
+        assert body["error"]["code"] == "VALIDATION_ERROR"
+        assert "Could not extract text from this PDF" in body["message"]
+
+    def test_oversized_pdf_rejected(self, client, app, auth_headers):
+        app.config["EMAIL_PDF_MAX_SIZE"] = 200
+        response = client.post(
+            "/api/email/analyze",
+            data=_pdf_upload(_build_text_pdf_bytes("x" * 2000), "big.pdf"),
+            headers=auth_headers,
+        )
+        assert response.status_code == 413
+        body = response.get_json()
+        assert body["success"] is False
+        assert body["error"]["code"] == "PAYLOAD_TOO_LARGE"
+        assert body["error"]["details"]["max_bytes"] == 200
+
+    def test_invalid_file_type_rejected(self, client, auth_headers):
+        response = client.post(
+            "/api/email/analyze",
+            data={"file": (BytesIO(b"click here"), "email.txt", "text/plain")},
+            headers=auth_headers,
+        )
+        assert response.status_code == 400
+        body = response.get_json()
+        assert body["success"] is False
+        assert body["error"]["code"] == "VALIDATION_ERROR"
+        assert "PDF" in body["message"]
+
+    def test_not_a_pdf_rejected(self, client, auth_headers):
+        response = client.post(
+            "/api/email/analyze",
+            data={"file": (BytesIO(b"definitely not a pdf"), "fake.pdf", "application/pdf")},
+            headers=auth_headers,
+        )
+        assert response.status_code == 400
+        assert response.get_json()["error"]["code"] == "VALIDATION_ERROR"
+
+    def test_missing_file_rejected(self, client, auth_headers):
+        response = client.post(
+            "/api/email/analyze",
+            data={"other": "nope"},
+            headers=auth_headers,
+            content_type="multipart/form-data",
+        )
+        assert response.status_code == 400
+        assert "PDF file is required" in response.get_json()["message"]
+
+    def test_extracted_text_within_analyzer_max_length(self, client, app, auth_headers):
+        app.config["EMAIL_MAX_LENGTH"] = 60
+        response = client.post(
+            "/api/email/analyze",
+            data=_pdf_upload(_build_text_pdf_bytes("word " * 200), "long.pdf"),
+            headers=auth_headers,
+        )
+        assert response.status_code == 400
+        assert response.get_json()["error"]["code"] == "VALIDATION_ERROR"
+
+    def test_pdf_requires_auth(self, client):
+        pdf = _build_text_pdf_bytes("Click here and verify your password")
+        response = client.post(
+            "/api/email/analyze", data=_pdf_upload(pdf, "email.pdf")
+        )
+        assert response.status_code == 401

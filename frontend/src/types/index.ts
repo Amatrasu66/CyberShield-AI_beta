@@ -106,3 +106,102 @@ export interface EmailAnalysisResult {
   readonly indicators: readonly EmailIndicator[];
   readonly stats: EmailAnalysisStats;
 }
+
+export type PasswordStrengthLabel = 'Weak' | 'Fair' | 'Good' | 'Strong';
+
+export interface PasswordRecommendation {
+  readonly text: string;
+  readonly priority: number;
+}
+
+export interface PasswordWeakness {
+  readonly code: string;
+  readonly severity: 'critical' | 'high' | 'medium' | 'low';
+  readonly title: string;
+  readonly message: string;
+  readonly recommendation: string;
+}
+
+export interface PasswordScoreBreakdown {
+  readonly factor: string;
+  readonly score: number;
+  readonly status: 'good' | 'warning' | 'danger';
+  readonly details: string;
+}
+
+export interface PasswordChecklistItem {
+  readonly item: string;
+  readonly status: 'passed' | 'failed' | 'advisory';
+  readonly passed: boolean | null;
+  readonly details: string;
+}
+
+export interface PasswordCharacterClasses {
+  readonly uppercase: boolean;
+  readonly lowercase: boolean;
+  readonly digits: boolean;
+  readonly special: boolean;
+}
+
+export interface PasswordAnalysisResult {
+  readonly length: number;
+  readonly char_classes: readonly string[];
+  readonly uppercase: boolean;
+  readonly lowercase: boolean;
+  readonly digits: boolean;
+  readonly special: boolean;
+  readonly classes_used: number;
+  readonly entropy_bits: number;
+  readonly crack_time_estimate: string;
+  readonly in_common_list: boolean;
+  readonly strength_score: number;
+  readonly strength: PasswordStrengthLabel;
+  readonly recommendations: readonly PasswordRecommendation[];
+  readonly weaknesses: readonly PasswordWeakness[];
+  readonly score_breakdown: readonly PasswordScoreBreakdown[];
+  readonly security_checklist: readonly PasswordChecklistItem[];
+}
+
+export type PasswordGenerationType = 'passphrase' | 'random';
+
+export interface PasswordGenerateRequest {
+  readonly type: PasswordGenerationType;
+  readonly words?: number;
+  readonly length?: number;
+  readonly delimiter?: string;
+}
+
+export interface PasswordGenerateResult {
+  readonly password: string;
+  readonly type: PasswordGenerationType;
+  readonly words?: number;
+  readonly length?: number;
+  readonly delimiter?: string;
+  readonly charset_size?: number;
+}
+
+export interface LogAnomaly {
+  readonly line_number: number | null;
+  readonly type: string;
+  readonly severity: 'High' | 'Medium' | 'Low';
+  readonly evidence: string;
+}
+
+export interface LogAnalysisStats {
+  readonly status_code_counts: Record<string, number>;
+  readonly unique_ips: number;
+  readonly top_sources: readonly [string, number][];
+}
+
+export interface LogAnalysisResult {
+  readonly total_lines: number;
+  readonly parsed_lines: number;
+  readonly skipped_lines: number;
+  readonly anomalies_detected: number;
+  readonly threat_score: number;
+  readonly severity: 'low' | 'medium' | 'high';
+  readonly analyzer: string;
+  readonly summary: string;
+  readonly stats: LogAnalysisStats;
+  readonly anomalies: readonly LogAnomaly[];
+}

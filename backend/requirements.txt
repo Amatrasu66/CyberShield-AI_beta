@@ -22,6 +22,9 @@ supabase==2.31.0
 # PDF Report Generation
 reportlab==4.0.8
 
+# PDF text extraction (Email Detector PDF uploads; pure Python, no heavy deps)
+pypdf==6.15.0
+
 # Testing
 pytest==9.1.1
 

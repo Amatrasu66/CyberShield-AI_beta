@@ -11,7 +11,7 @@ from .crypto_service import CryptoService
 from .dashboard_service import DashboardService
 from .email_service import EmailService
 from .log_service import LogService
-from .password_service import PasswordService
+from .password_service import PasswordGenerator, PasswordService
 from .report_service import ReportService
 from .scanner_service import ScannerService
 from .sql_service import SQLPlaygroundService
@@ -22,6 +22,7 @@ __all__ = [
     "DashboardService",
     "EmailService",
     "LogService",
+    "PasswordGenerator",
     "PasswordService",
     "ReportService",
     "ScannerService",
