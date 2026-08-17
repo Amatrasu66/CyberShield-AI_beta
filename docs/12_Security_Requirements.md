@@ -11,3 +11,16 @@
 - Input validation
 - Secure file uploads (private Supabase Storage bucket with signed access for PDFs)
 - HTTPS in production
+
+## SQL Playground Isolation
+- SQL endpoints `/api/sql/run` and `/api/sql/scenarios` are authenticated.
+- No arbitrary SQL execution: only fixed scenario IDs with fixed SQL templates are accepted.
+- Every run uses a fresh in-memory `sqlite3 ":memory:"` database; no persistence, no PostgreSQL, no Supabase access, no network.
+- SQLite authorizer denies writes, DDL, ATTACH/DETACH, PRAGMA, and `load_extension`; reads are restricted to the demo tables.
+- Payload length limit, query work budget (progress handler), max result rows, max result cell size, JSON-safe cells, and generic rejection messages (no sqlite internals leaked).
+
+## Cryptography Lab
+- Sensitive values are never persisted: plaintext, passphrases, keys, ciphertext, salts, nonces, and HMAC keys are kept in memory and returned in responses only.
+- Browser-side Web Crypto architecture: the frontend crypto engine executes client-side and never sends plaintext, passphrases, or keys to the backend.
+- Use of vetted primitives only: AES-256-GCM, PBKDF2-HMAC-SHA256, and cryptographically secure randomness (`crypto.getRandomValues()` / `os.urandom`).
+- SHA-1 and MD5 are exposed solely for educational/deprecation demonstrations and must be described as deprecated and inappropriate for new security-sensitive systems.

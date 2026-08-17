@@ -14,11 +14,13 @@ Build a modern web application that combines cybersecurity utilities with lightw
 - Use only free technologies.
 
 ## Core Modules
-1. Website Security Scanner
-2. Phishing Email Detector (AI)
-3. Password Strength Analyzer
-4. Log Analyzer (AI)
-5. Cryptography Lab
-6. SQL Injection Playground
-7. Dashboard
-8. PDF Report Generator
+1. Website Security Scanner — implemented
+2. Phishing Email Detector (AI) — detector implemented with deterministic heuristics; AI inference planned, not yet implemented
+3. Password Strength Analyzer — implemented
+4. Log Analyzer (AI) — analyzer implemented with deterministic rules; AI inference planned, not yet implemented
+5. Cryptography Lab — backend API and browser crypto engine implemented; dedicated UI planned
+6. SQL Injection Playground — implemented (isolated in-memory SQLite sandbox)
+7. Dashboard — implemented
+8. PDF Report Generator — implemented
+
+See 14_Development_Roadmap.md for the verified status of each workstream.

@@ -102,8 +102,19 @@ Supabase (PostgreSQL)
 ## Storage
 - Generated PDFs use a private Supabase Storage bucket with signed access URLs.
 
+## Out of the Production Database (Isolated by Design)
+- **SQL Injection Playground** does NOT use the production database. Every
+  execution opens a brand-new in-memory `sqlite3 ":memory:"` database with
+  deterministic seed data; no SQLite files, no PostgreSQL, and no network.
+  The sandbox persists nothing and is closed at the end of each request.
+- **Cryptography Lab** requires no persistence. The following values are never
+  written to the database or any storage: plaintext, passphrases,
+  cryptographic keys, ciphertext, salts, nonces, and HMAC keys. Encryption
+  material is returned in the response only and intentionally not retained.
+
 ## Never Stored
 - Analyzed passwords or their hashes.
 - Raw email content and raw log content (findings only).
 - Password hashes (handled internally by Supabase Auth only).
+- Cryptography plaintext, passphrases, keys, ciphertext, salts, nonces, and HMAC keys.
 - Secrets, service-role credentials, API keys.
