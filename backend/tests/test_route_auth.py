@@ -41,6 +41,8 @@ class TestProtectedRoutesRequireAuth:
         ("post", "/api/logs/analyze", {"content": "GET / HTTP/1.1 200"}),
         ("get", "/api/reports", None),
         ("post", "/api/reports/generate", {"title": "Audit"}),
+        ("post", "/api/sql/run", {"scenario": "login", "payload": "' OR '1'='1"}),
+        ("get", "/api/sql/scenarios", None),
     ])
     def test_missing_token_returns_401(self, client, method, path, json):
         response = getattr(client, method)(path, json=json)
@@ -120,6 +122,20 @@ class TestProtectedRoutesAuthenticated:
         listed = client.get("/api/reports", headers=auth_headers)
         assert listed.status_code == 200
         assert listed.get_json()["meta"]["count"] == 1
+
+    def test_sql_run_authenticated(self, client, auth_headers):
+        response = client.post(
+            "/api/sql/run",
+            json={"scenario": "login", "payload": "' OR '1'='1"},
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+        assert response.get_json()["data"]["scenario"] == "login"
+
+    def test_sql_scenarios_authenticated(self, client, auth_headers):
+        response = client.get("/api/sql/scenarios", headers=auth_headers)
+        assert response.status_code == 200
+        assert set(response.get_json()["data"]) == {"login", "union", "boolean", "comment"}
 
 
 class TestUserScoping:

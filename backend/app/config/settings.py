@@ -89,6 +89,9 @@ class Config:
     LOG_MAX_LINES = _env_int("LOG_MAX_LINES", 10_000)
     CRYPTO_MAX_INPUT_LENGTH = _env_int("CRYPTO_MAX_INPUT_LENGTH", 100_000)
     URL_MAX_LENGTH = _env_int("URL_MAX_LENGTH", 2048)
+    # Maximum length of a single SQL Playground payload. Dedicated to the SQL
+    # sandbox; deliberately independent of the crypto lab limits.
+    SQL_PAYLOAD_MAX_LENGTH = _env_int("SQL_PAYLOAD_MAX_LENGTH", 2048)
 
     # --- Supabase (PostgreSQL database) ------------------------------------
     # From the Supabase dashboard: Project Settings > API Keys.

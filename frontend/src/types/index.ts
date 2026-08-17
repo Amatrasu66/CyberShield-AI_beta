@@ -275,3 +275,46 @@ export interface Report {
 export interface ReportGenerateRequest {
   readonly title?: string;
 }
+
+export interface SqlScenario {
+  readonly id: string;
+  readonly name: string;
+  readonly description: string;
+  readonly example_payload: string;
+  readonly vulnerable_explanation: string;
+  readonly secure_explanation: string;
+  readonly mitigation: string;
+  readonly vulnerable_template: string;
+  readonly secure_template: string;
+}
+
+export interface SqlRunRequest {
+  readonly scenario: string;
+  readonly payload: string;
+}
+
+export interface SqlResultSet {
+  readonly rows: number;
+  readonly columns: readonly string[];
+  readonly data: readonly (readonly (string | number | null)[])[];
+  readonly execution_status: 'ok' | 'rejected';
+  readonly rejection_reason?: string;
+}
+
+export interface SqlExplanation {
+  readonly what_happened: string;
+  readonly why_vulnerable: string;
+  readonly why_safe: string;
+  readonly mitigation: string;
+}
+
+export interface SqlRunResult {
+  readonly scenario: string;
+  readonly input: string;
+  readonly vulnerable_query: string;
+  readonly safe_query: string;
+  readonly vulnerable_result: SqlResultSet;
+  readonly safe_result: SqlResultSet;
+  readonly explanation: SqlExplanation;
+  readonly sandbox: string;
+}
