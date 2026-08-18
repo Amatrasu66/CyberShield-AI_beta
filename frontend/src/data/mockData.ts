@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import { BarChart3, Bug, FileText, KeyRound, LayoutDashboard, MailWarning, ScanSearch, Settings, ShieldCheck, UserRound } from 'lucide-react';
+import { BarChart3, Bug, FileText, GraduationCap, KeyRound, LayoutDashboard, MailWarning, ScanSearch, Settings, ShieldCheck, UserRound } from 'lucide-react';
 
 export type NavItem = { label: string; to: string; icon: LucideIcon };
 export const navigation: readonly NavItem[] = [
@@ -7,6 +7,7 @@ export const navigation: readonly NavItem[] = [
   { label: 'Email Detector', to: '/phishing-detector', icon: MailWarning }, { label: 'Password Analyzer', to: '/password-analyzer', icon: KeyRound },
   { label: 'Log Analyzer', to: '/log-analyzer', icon: BarChart3 }, { label: 'Reports', to: '/reports', icon: FileText },
   { label: 'SQL Playground', to: '/sql-playground', icon: Bug }, { label: 'Cryptography Lab', to: '/cryptography-lab', icon: ShieldCheck },
+  { label: 'Tutorials', to: '/tutorials', icon: GraduationCap },
 ];
 
 export const userNav: readonly NavItem[] = [{ label: 'Profile', to: '/profile', icon: UserRound }, { label: 'Settings', to: '/settings', icon: Settings }];

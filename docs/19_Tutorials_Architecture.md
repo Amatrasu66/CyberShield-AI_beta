@@ -1,13 +1,12 @@
 # 19 — Tutorials & Cyber Academy Architecture
 
-> Version: 2026-08-18 · Status: design spec for the **planned** Tutorials / Cyber Academy
+> Version: 2026-08-19 · Status: architecture of the **implemented** Tutorials / Cyber Academy
 > documentation system, with every repository-specific claim verified against the source.
 
-This document defines the architecture of the **future** CyberShield AI Tutorials /
-Cyber Academy documentation system. It is written before any tutorial UI exists, so it
-starts from an accurate, source-verified map of the current application — the tutorials
-must teach the tools that actually exist — and then specifies how the education layer will
-be structured, stored, and presented.
+This document defines the architecture of the CyberShield AI Tutorials / Cyber Academy
+documentation system. It starts from an accurate, source-verified map of the current
+application — the tutorials teach the tools that actually exist — and then describes how
+the education layer is structured, stored, and presented.
 
 The final sections are a Stitch mapping guide so the design system can be extracted and
 re-applied consistently.
@@ -60,13 +59,17 @@ repository explicitly grows to support one.
 - All current security tools and their authenticated backends (Website Scanner, Email /
   Phishing Detector, Password Analyzer, Log Analyzer, SQL Playground, Cryptography Lab,
   Reports, Dashboard, Authentication).
-- No Tutorials / Cyber Academy page, route, content store, or lesson renderer exists yet.
+- The Tutorials / Cyber Academy page, routes, content store, and lesson renderer
+  (frontend-only, documented in §14): `/tutorials`, `/tutorials/:area`,
+  `/tutorials/:area/:lesson`, with **nine ready tutorial areas** (one per current tool plus
+  platform-level Dashboard and Authentication & account) and the AI/ML area reserved as
+  planned.
 
-### Planned (specified by this document, not yet built)
+### Planned (not yet built)
 
-- A tutorials area in the frontend, one tutorial per current tool, plus platform-level
-  tutorials (dashboard, authentication/account, future AI/ML).
-- A content-storage model and navigation structure for those tutorials.
+- The AI/ML tutorial area (area #10, `status: 'planned'`, zero lessons). It will be
+  documented when model-backed analysis is actually implemented; every analyzer in the
+  console is rule-based today.
 
 ### Explicitly out of scope
 
@@ -148,7 +151,7 @@ These statements were confirmed directly from the code during the audit:
 | Runtime inputs are bounded by env-driven limits (email ≤ 50 KB, log ≤ 500 KB, URL ≤ 2048, payload ≤ 1 MB) | `backend/app/config/settings.py`, `backend/app/utils/validators.py` |
 | ML models are **placeholders/stubs** (`app/ml/`, `models/*.pkl.placeholder`); the `.pkl` paths are configured but the models are not load-bearing | `backend/app/ml/*`, `backend/app/config/settings.py`, `models/README.md` |
 | There is **no DESIGN.md** yet; Stitch integration is greenfield (this document is the starting spec) | repo root scan |
-| **No Tutorials / Cyber Academy exists yet** — this document is the design spec (§15) | repo scan (`frontend/src/pages`, `frontend/src/App.tsx`) |
+| Tutorials are frontend-only, **documentation-based** structured data: `/tutorials`, `/tutorials/:area`, `/tutorials/:area/:lesson` under the protected shell; **9 ready areas × 4 lessons** + 1 planned AI/ML area; typed sections (`text`/`list`/`callout`/`example`); sidebar "Tutorials" entry; **no markdown renderer, no backend lesson endpoints** | `frontend/src/App.tsx`, `frontend/src/types/tutorials.ts`, `frontend/src/data/tutorialContent.ts`, `frontend/src/data/mockData.ts`, `frontend/src/pages/tutorials/*`, `frontend/src/components/tutorials/*` |
 
 ### 5.3 Repository map (current)
 
@@ -159,18 +162,22 @@ CyberShield-AI/
 │   │   ├── App.tsx           # Route definitions (auth + protected console routes)
 │   │   ├── main.tsx          # BrowserRouter + AuthProvider entry
 │   │   ├── components/       # AppShell, Sidebar, Topbar, NewScanModal, LoadingStates,
-│   │   │                     # EmptyStates, AuthGuards (RequireAuth/RequireGuest), PageHeader, ui
-│   │   ├── context/AuthContext.tsx
-│   │   ├── pages/            # Dashboard, WebsiteScanner, EmailDetector, PasswordAnalyzer,
-│   │   │                     # LogAnalyzer, Reports, SQLPlayground, CryptographyLab,
-│   │   │                     # AuthPage, WorkspacePages (Profile/Settings/NotFound), ToolPage
-│   │   ├── services/         # apiClient.ts (fetch + Bearer), supabaseClient.ts
-│   │   ├── styles/globals.css
-│   │   ├── types/            # index.ts (shared interfaces), crypto.ts (crypto engine types)
-│   │   ├── utils/cn.ts       # clsx + tailwind-merge
-│   │   ├── data/mockData.ts  # deterministic demo fallback + nav data
-│   │   ├── data/cryptoContent.ts  # crypto lab module + concept content spec
-│   │   └── lib/cryptoEngine.ts    # browser Web Crypto engine (hashing/AES/HMAC/random/encoding)
+  │   │   │                     # EmptyStates, AuthGuards (RequireAuth/RequireGuest), PageHeader, ui
+  │   │   │                     # tutorials/ (AreaCard, LessonPager, LessonSectionView, TutorialNotFound)
+  │   │   ├── context/AuthContext.tsx
+  │   │   ├── pages/            # Dashboard, WebsiteScanner, EmailDetector, PasswordAnalyzer,
+  │   │   │                     # LogAnalyzer, Reports, SQLPlayground, CryptographyLab,
+  │   │   │                     # AuthPage, WorkspacePages (Profile/Settings/NotFound), ToolPage
+  │   │   │                     # tutorials/ (TutorialsIndexPage, TutorialAreaPage, TutorialLessonPage)
+  │   │   ├── services/         # apiClient.ts (fetch + Bearer), supabaseClient.ts
+  │   │   ├── styles/globals.css
+  │   │   ├── types/            # index.ts (shared interfaces), crypto.ts (crypto engine types),
+  │   │   │                     # tutorials.ts (TutorialArea/TutorialLesson/TutorialSection)
+  │   │   ├── utils/cn.ts       # clsx + tailwind-merge
+  │   │   ├── data/mockData.ts  # deterministic demo fallback + nav data (incl. "Tutorials" entry)
+  │   │   ├── data/cryptoContent.ts  # crypto lab module + concept content spec
+  │   │   ├── data/tutorialContent.ts  # tutorial areas & lessons (structured content)
+  │   │   └── lib/cryptoEngine.ts    # browser Web Crypto engine (hashing/AES/HMAC/random/encoding)
 │   ├── vite.config.ts        # port 3000, /api proxy → :5000
 │   ├── tailwind.config.js    # the entire design token system (§12)
 │   └── package.json
@@ -225,7 +232,8 @@ CyberShield-AI/
   appends `Authorization: Bearer`, parses the envelope, and throws structured
   `ApiClientError`s on failure (`get`, `post`, `postForm`).
 - **Demo fallback**: `data/mockData.ts` supplies deterministic sample payloads and the
-  navigation data so pages render meaningfully even when the backend is unreachable.
+  navigation data (including the "Tutorials" sidebar entry) so pages render meaningfully
+  even when the backend is unreachable.
 
 ### 6.3 Pages & routes (actual, from `frontend/src/App.tsx`)
 | Route | Page | Core interactions |
@@ -238,6 +246,9 @@ CyberShield-AI/
 | `/sql-playground` | SQLPlaygroundPage | `GET /api/sql/scenarios` + `POST /api/sql/run` (in-memory SQLite sandbox, §7.5) |
 | `/cryptography-lab` | CryptographyLabPage | browser-only modules: hashing, encoding, AES-256-GCM, HMAC-SHA256, secure randomness (§7.6) |
 | `/reports` | ReportsPage | `GET /api/reports`, `POST /api/reports/generate` → PDF + signed URL |
+| `/tutorials` | TutorialsIndexPage | index of all tutorial areas (9 ready + 1 planned) with "Open tutorials" / live-tool links |
+| `/tutorials/:area` | TutorialAreaPage | lessons for one area + "Open {tool}" link to the live page |
+| `/tutorials/:area/:lesson` | TutorialLessonPage | structured lesson sections + "In this area" index + previous/next pager |
 | `/profile` | ProfilePage | static account identity display (demo) |
 | `/settings` | SettingsPage | static preference controls (demo) |
 | `/login` · `/register` · `/forgot-password` | AuthPage | Supabase sign-in / sign-up / password reset (client-side) |
@@ -246,7 +257,9 @@ CyberShield-AI/
 ### 6.4 Shared components
 `AppShell`, `Sidebar`, `Topbar`, `NewScanModal`, `LoadingStates`, `EmptyStates`,
 `AuthGuards` (`RequireAuth`/`RequireGuest`), `PageHeader`, and small UI atoms in
-`components/ui.tsx`. Global CSS classes: `.panel`, `.eyebrow`, `.grid-glow` (§12).
+`components/ui.tsx`. The Tutorials area reuses these plus a dedicated set under
+`components/tutorials/` (`AreaCard`, `LessonPager`, `LessonSectionView`,
+`TutorialNotFound`; §14.6). Global CSS classes: `.panel`, `.eyebrow`, `.grid-glow` (§12).
 
 ---
 
@@ -518,7 +531,7 @@ When extracting the design into Stitch (or regenerating screens from it), use th
 | `labelFont` | `INTER` |
 | mono usage (eyebrows/code) | JetBrains Mono via designMd note |
 | `roundness` | `ROUND_EIGHT` (cards `0.5rem` dominate; note 4px controls in designMd) |
-| Screens | Dashboard, WebsiteScanner, EmailDetector, PasswordAnalyzer, LogAnalyzer, Reports, SQLPlayground, CryptographyLab, Auth (+ planned Tutorials screens when built) |
+| Screens | Dashboard, WebsiteScanner, EmailDetector, PasswordAnalyzer, LogAnalyzer, Reports, SQLPlayground, CryptographyLab, Auth, Tutorials (index / area / lesson) |
 | `deviceType` | `DESKTOP` (dashboard/tools), `AGNOSTIC` where width-independent |
 | Design MD | This document §11–§12 (determinism contract + token table) is the source of truth |
 
@@ -529,7 +542,7 @@ byte-identical palettes, fonts, and radii.
 
 ---
 
-## 14. Tutorials system architecture (planned)
+## 14. Tutorials system architecture (implemented)
 
 ### 14.1 What it is (and is not)
 
@@ -542,81 +555,106 @@ byte-identical palettes, fonts, and radii.
 
 ### 14.2 Tutorial areas (mapped to actual modules)
 
-Each area maps 1:1 to an existing tool/service so every statement can be verified:
+Each area maps 1:1 to an existing tool/service so every statement can be verified. Nine
+areas are implemented (as `status: 'ready'` in `data/tutorialContent.ts`, each with four
+lessons); the AI/ML area is reserved as planned:
 
-| # | Tutorial area | Backs on | Backend service / module |
-|---|---|---|---|
-| 1 | Website Scanner | `/website-scanner` | `services/scanner_service.py` |
-| 2 | Email / Phishing Detector | `/phishing-detector` | `services/email_service.py`, `services/pdf_extractor.py` |
-| 3 | Password Analyzer | `/password-analyzer` | `services/password_service.py` |
-| 4 | Log Analyzer | `/log-analyzer` | `services/log_service.py` |
-| 5 | Reports | `/reports` | `services/report_service.py`, `reports/` |
-| 6 | Cryptography Lab | `/cryptography-lab` | `lib/cryptoEngine.ts`, `data/cryptoContent.ts`, `services/crypto_service.py` |
-| 7 | SQL Playground | `/sql-playground` | `services/sql_lab_service.py`, `services/sql_service.py` |
-| 8 | Dashboard | `/dashboard` | `services/dashboard_service.py` |
-| 9 | Authentication / account | `/login`, `/register`, `/forgot-password`, `/profile`, `/settings` | Supabase Auth, `services/auth_service.py` |
-| 10 | AI/ML functionality | (none yet) | `app/ml/*` — only when actually implemented |
+| # | Tutorial area | Course slug | Backs on | Backend service / module | Status |
+|---|---|---|---|---|---|
+| 1 | Website Scanner | `website-scanner` | `/website-scanner` | `services/scanner_service.py` | implemented |
+| 2 | Email / Phishing Detector | `phishing-detector` | `/phishing-detector` | `services/email_service.py`, `services/pdf_extractor.py` | implemented |
+| 3 | Password Analyzer | `password-analyzer` | `/password-analyzer` | `services/password_service.py` | implemented |
+| 4 | Log Analyzer | `log-analyzer` | `/log-analyzer` | `services/log_service.py` | implemented |
+| 5 | Reports | `reports` | `/reports` | `services/report_service.py`, `reports/` | implemented |
+| 6 | Cryptography Lab | `cryptography-lab` | `/cryptography-lab` | `lib/cryptoEngine.ts`, `data/cryptoContent.ts`, `services/crypto_service.py` | implemented |
+| 7 | SQL Playground | `sql-playground` | `/sql-playground` | `services/sql_lab_service.py`, `services/sql_service.py` | implemented |
+| 8 | Dashboard | `dashboard` | `/dashboard` | `services/dashboard_service.py` | implemented |
+| 9 | Authentication / account | `authentication` | `/profile` (account); auth flow taught via `/login`, `/register`, `/forgot-password` | Supabase Auth, `services/auth_service.py` | implemented |
+| 10 | AI/ML functionality | `ai-ml` | (none yet — no live page) | `app/ml/*` — only when actually implemented | planned (`status: 'planned'`, 0 lessons) |
 
 ### 14.3 Content structure of a tutorial
 
-Every tutorial is a structured lesson following a single template:
+Tutorial content is typed data (see §14.5). Each ready area ships **four lessons** rendered
+from the same `TutorialLesson` shape, following a consistent narrative arc:
 
-1. **Overview** — what the tool does and why it exists.
-2. **When to use it** — realistic scenarios and safe/ethical boundaries.
-3. **How to use it** — step-by-step walkthrough of the actual UI.
-4. **Inputs** — what each field means and its limits (e.g. email ≤ 50 KB, log ≤ 500 KB,
-   URL ≤ 2048 chars, SQL payload ≤ 2048 chars).
-5. **Outputs** — what each result section means (e.g. check statuses, risk levels, scores,
-   confidence, threat score, signed report URLs).
-6. **How the module works** — the real service/engine behavior (verified, source-accurate).
-7. **Security concepts** — the principles the tool demonstrates.
-8. **Limitations** — what the tool cannot do (e.g. ML is placeholder; the crypto lab is
-   browser-local; the SQL lab only runs fixed templates; password checks use an inline
-   common-password list, not a breach dataset).
-9. **Common mistakes** — how students misuse the tool or misread results.
-10. **Safe & ethical usage** — authorization, no scanning of systems you don't own, no real
-    secrets in the labs, no persisting of sensitive input.
-11. **Examples** — deterministic sample inputs with expected outputs.
+1. **Opening lesson** — "What it does" (or the area's variant: "What it is", "Two
+   surfaces", "What it shows", "How auth works"): the tool's purpose, what it
+   checks/produces, and what it deliberately does **not** do (non-destructive only).
+2. **How to use it** — step-by-step walkthrough of the actual page: required inputs, field
+   limits (e.g. email ≤ 50 KB, log ≤ 500 KB, URL ≤ 2048 chars, SQL payload ≤ 2048 chars),
+   and the exact interaction flow.
+3. **Reading the results** — what every output section means (score/grade, check
+   statuses, risk levels, verdicts, confidence, signed report URLs) plus a worked example
+   and common mistakes.
+4. **How it works behind the scenes** — the real service/engine behavior (verified,
+   source-accurate), the security concepts in play, limitations, and safe/ethical use.
 
-### 14.4 Information architecture & navigation model (planned)
+Within a lesson, sections are one of **four typed kinds** (`TutorialSection` in
+`types/tutorials.ts`), rendered by `LessonSectionView`:
 
-- Proposed routes (not implemented):
-  - `/tutorials` — index of all tutorial areas.
+| Section kind | Rendered as |
+|---|---|
+| `text` | heading + paragraph |
+| `list` | heading + bulleted items (optionally introduced by an `intro`) |
+| `callout` | bordered note with a `tone` (`success` / `warning` / `danger` / `primary`) |
+| `example` | labeled input/output pair in mono `pre` blocks, optional `detail` line |
+
+Lessons may also carry `related` links (to the live tool and to sibling tutorials). This
+one template covers all the originally specified fields — overview, when to use, how to
+use, inputs, outputs, module internals, security concepts, limitations, common mistakes,
+safe & ethical usage, examples — across the four lessons.
+
+### 14.4 Information architecture & navigation model
+
+- Implemented routes (in `frontend/src/App.tsx`, inside the protected console group):
+  - `/tutorials` — index of all tutorial areas (9 ready + 1 planned).
   - `/tutorials/:area` — one tutorial area (e.g. `/tutorials/website-scanner`).
   - `/tutorials/:area/:lesson` — an individual lesson within an area.
 - The Tutorials area sits inside the existing authenticated `AppShell` (sidebar + content)
   and inherits `RequireAuth`, the same `PageHeader` pattern, and the shared token classes.
-- A sidebar entry (or a sub-navigation within the Tutorials page) mirrors the ten areas in
-  §14.2. Navigation data is added to `data/mockData.ts` so the shell, screenshots, and
-  Stitch regeneration stay deterministic.
+- A **sidebar entry** "Tutorials" (`GraduationCap` icon) is part of the `navigation` array
+  in `data/mockData.ts`. The index page groups learning paths into "Learning paths" (ready)
+  and "Planned areas"; the area/lesson pages add breadcrumb back-links and an "In this
+  area" lesson index on lessons.
 
-### 14.5 Content storage strategy (planned)
+### 14.5 Content storage strategy
 
-- Tutorial content is **structured data**, not a new markdown pipeline. Follow the
-  `data/cryptoContent.ts` precedent: typed content modules (`types/tutorials.ts` +
-  `data/tutorialContent.ts`) rendered by dedicated React components.
-- This preserves the §11 determinism contract (no `react-markdown`, no server-rendered
-  lesson content, no timestamps/randomness).
-- The content lives in the frontend as code-owned data; no new backend tables or endpoints
-  are introduced for tutorials.
+- Tutorial content is **structured data**, not a markdown pipeline, implemented exactly as
+  planned: `types/tutorials.ts` provides the typed content model (`TutorialArea`,
+  `TutorialLesson`, the `text`/`list`/`callout`/`example` section union, and
+  `TutorialStatus = 'ready' | 'planned'`); `data/tutorialContent.ts` exports
+  `tutorialAreas` plus `getTutorialArea(slug)` / `getTutorialLesson(areaSlug, lessonId)`
+  lookups. Dedicated React components render the content (§14.6).
+- This preserves the §11 determinism contract: `frontend/package.json` has **no**
+  `react-markdown` (or any markdown renderer), and the content contains no timestamps or
+  randomness.
+- The content lives in the frontend as code-owned data; **no new backend tables or
+  endpoints** were introduced for tutorials.
 
-### 14.6 Frontend architecture for tutorials (planned)
+### 14.6 Frontend architecture for tutorials
 
-- New page components under `frontend/src/pages/tutorials/` (e.g. `TutorialsIndexPage`,
-  `TutorialAreaPage`, `TutorialLessonPage`), plus a small set of reusable lesson-rendering
-  components (`components/tutorials/`) that render the structured lesson sections in §14.3.
-- Routes added in `App.tsx` inside the protected console group.
-- Design: reuse `.eyebrow`, `.panel`/`Card`, `PageHeader`, token colors/fonts only — no
-  new ad-hoc styling.
+- Page components live under `frontend/src/pages/tutorials/`:
+  - `TutorialsIndexPage` — `/tutorials` (learning paths + planned areas card grids).
+  - `TutorialAreaPage` — `/tutorials/:area` (area header + lessons list).
+  - `TutorialLessonPage` — `/tutorials/:area/:lesson` (lessons, "In this area", pager).
+- Reusable lesson-rendering components live under `frontend/src/components/tutorials/`:
+  `AreaCard` (index/area cards), `LessonSectionView` (renders the §14.3 section kinds),
+  `LessonPager` (previous/next navigation), and `TutorialNotFound` (404 fallback for an
+  unknown area or lesson).
+- Routes are added in `App.tsx` inside the protected console group.
+- Design: reuses `.eyebrow`, `Card`/`.panel`, `PageHeader`, `Badge`, token colors/fonts
+  only — no new ad-hoc styling.
 - Accessibility: semantic headings, focus-visible rings, contrast-safe tokens, keyboard
-  navigable content, `aria` labels (mirroring existing page patterns).
-- Responsive: the same column/grid utilities already used across the app (mobile-first,
-  stacked on small screens, side-by-side panels at `lg`/`xl`).
+  navigable links (mirroring existing page patterns).
+- Responsive: the index uses `sm:grid-cols-2 xl:grid-cols-3` card grids; the lesson page
+  is a single reading column that becomes `content + 320px sticky aside` at `lg`.
 
 ### 14.7 Relationship with existing tools
 
 - Each tutorial references the live page it teaches (e.g. "open `/cryptography-lab` and
-  try…"), so the tutorial is a guided companion rather than a static substitute.
+  try…"), and the index/area page cards and lesson headers expose an **"Open {tool}"**
+  link to the area's `toolPath` — the tutorial is a guided companion rather than a static
+  substitute.
 - Any statement about behavior must remain verifiable against the modules in §7 — if the
   tool changes, the tutorial changes with it.
 
@@ -650,12 +688,13 @@ Every tutorial is a structured lesson following a single template:
 
 ### 14.12 Implementation plan (phases)
 
-1. **Phase A — content model**: add `types/tutorials.ts` + `data/tutorialContent.ts`
-   covering all ten areas from verified §7 module behavior. No UI yet.
-2. **Phase B — navigation & pages**: add `/tutorials`, `/tutorials/:area`,
-   `/tutorials/:area/:lesson` inside the protected shell; render the structured content.
-3. **Phase C — polish**: accessibility pass, responsive tuning, Stitch screen generation
-   from the §13 design system, and cross-linking tutorials ↔ live tools.
+1. **Phase A — content model** — **DONE**: `types/tutorials.ts` + `data/tutorialContent.ts`
+   cover the areas from verified §7 module behavior.
+2. **Phase B — navigation & pages** — **DONE**: `/tutorials`, `/tutorials/:area`,
+   `/tutorials/:area/:lesson` inside the protected shell; structured content rendered.
+3. **Phase C — polish** — accessibility pass, responsive tuning, and cross-linking
+   tutorials ↔ live tools are **done**. Generating the tutorial screens in Stitch from
+   the §13 design system remains as optional follow-up.
 
 ---
 
@@ -671,8 +710,9 @@ Every tutorial is a structured lesson following a single template:
 4. **No DESIGN.md / Stitch asset exists yet** — §13 is the blueprint for adding it.
 5. **Some older docs (00/04/12)** describe aspirational features not yet in code (e.g. parts
    of the ML/roadmap claims). Cross-check anything critical against the code + this doc.
-6. **Tutorials / Cyber Academy is not implemented** — §14 is the design spec; nothing under
-   it exists in the repository yet.
+6. **The AI/ML tutorial area is placeholder** — §14.2 area #10 (`ai-ml`) is
+   `status: 'planned'` with zero lessons until real, model-backed analysis exists; do not
+   claim it is documented.
 
 ---
 

@@ -1,6 +1,6 @@
 # Development Roadmap
 
-Status labels: **COMPLETED** (implemented and verified in the repository at HEAD `c5c3c0c`), **NEXT** (next implementation step), **LATER** (defined direction, not yet implemented), **PLANNED** (defined direction, deliberately deferred until the core is stable).
+Status labels: **COMPLETED** (implemented and verified in the repository at HEAD `c42a899`), **NEXT** (next implementation step), **LATER** (defined direction, not yet implemented), **PLANNED** (defined direction, deliberately deferred until the core is stable).
 
 ## COMPLETED
 - Backend core services (auth, dashboard, scanner, email, password, logs, reports) and Supabase/JWT authentication.
@@ -13,9 +13,7 @@ Status labels: **COMPLETED** (implemented and verified in the repository at HEAD
 - Cryptography Lab UI (`frontend/src/pages/CryptographyLabPage.tsx` at `/cryptography-lab`).
 - Cryptography security hardening: all backend crypto endpoints are authenticated, the browser engine enforces a 512-character AES passphrase cap, PBKDF2 remains 600,000 iterations, and AES remains AES-256-GCM.
 - Dashboard, reports, and workspace pages.
-
-## NEXT
-- Documentation/tutorial system: a section explaining how the toolkit works and how to use each module.
+- Tutorials / Cyber Academy (frontend-only, documentation-based): routes `/tutorials`, `/tutorials/:area`, `/tutorials/:area/:lesson`; structured typed content (`types/tutorials.ts`, `data/tutorialContent.ts`); reusable lesson components (`components/tutorials/`); sidebar navigation entry. Nine ready areas (Website Scanner, Email / Phishing Detector, Password Analyzer, Log Analyzer, Reports, Cryptography Lab, SQL Playground, Dashboard, Authentication & account) each with four lessons; the AI/ML area remains planned (0 lessons).
 
 ## LATER
 - Remaining core cybersecurity module improvements.

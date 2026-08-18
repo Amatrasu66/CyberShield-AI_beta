@@ -14,6 +14,9 @@ the authenticated app shell (`RequireAuth` + `AppShell`):
 - SQL Playground (`SQLPlaygroundPage.tsx`) — `/sql-playground` (implemented)
 - Cryptography Lab (`CryptographyLabPage.tsx`) — `/cryptography-lab` (implemented)
 - Reports (`ReportsPage`) — `/reports`
+- Tutorials Index (`TutorialsIndexPage`) — `/tutorials`
+- Tutorial Area (`TutorialAreaPage`) — `/tutorials/:area`
+- Tutorial Lesson (`TutorialLessonPage`) — `/tutorials/:area/:lesson`
 - Profile / Settings (Workspace pages) — `/profile`, `/settings`
 - NotFound — catch-all
 
@@ -30,6 +33,21 @@ the authenticated app shell (`RequireAuth` + `AppShell`):
   generation entirely in the browser via the Web Crypto API. It does **not** use
   `apiClient` and does not call `/api/crypto/*`; plaintext, passphrases, and
   keys never leave the page.
+
+## Tutorials
+- Documentation-only, frontend-only education layer. Rendered from structured typed
+  data — no markdown renderer, no backend lesson endpoints. Fully documented in
+  `docs/19_Tutorials_Architecture.md`.
+- `src/types/tutorials.ts` — content model (`TutorialArea`, `TutorialLesson`,
+  `text`/`list`/`callout`/`example` section union, `TutorialStatus = 'ready' | 'planned'`).
+- `src/data/tutorialContent.ts` — `tutorialAreas` (9 `ready` areas × 4 lessons, plus the
+  `ai-ml` area as `planned` with 0 lessons).
+- `src/pages/tutorials/` — `TutorialsIndexPage`, `TutorialAreaPage`, `TutorialLessonPage`
+  (routes in `App.tsx` inside the protected console group).
+- `src/components/tutorials/` — `AreaCard`, `LessonSectionView`, `LessonPager`,
+  `TutorialNotFound`.
+- Navigation: "Tutorials" sidebar entry in `src/data/mockData.ts`; pages reuse
+  `PageHeader`, `Card`, `Badge`, `.eyebrow`, and token classes only. Uses no `apiClient`.
 
 ## State Management
 Prefer Context API (`AuthProvider`) initially.

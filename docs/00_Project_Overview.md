@@ -22,5 +22,6 @@ Build a modern web application that combines cybersecurity utilities with lightw
 6. SQL Injection Playground — implemented (isolated in-memory SQLite sandbox)
 7. Dashboard — implemented
 8. PDF Report Generator — implemented
+9. Documentation Tutorials — implemented (frontend-only education layer with 9 ready areas + planned AI/ML area; structured content, no new backend)
 
 See 14_Development_Roadmap.md for the verified status of each workstream.

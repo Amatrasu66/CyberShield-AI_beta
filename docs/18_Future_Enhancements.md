@@ -10,7 +10,6 @@
 - Multi-user collaboration
 - Role-based access control
 - Two-factor authentication
-- Documentation/tutorial section explaining how the toolkit works and how to use each module
 - Professional landing page after the core application is complete
 - Docker deployment
 - CI/CD pipeline
