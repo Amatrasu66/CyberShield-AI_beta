@@ -21,6 +21,8 @@
 
 ## Cryptography Lab
 - Sensitive values are never persisted: plaintext, passphrases, keys, ciphertext, salts, nonces, and HMAC keys are kept in memory and returned in responses only.
-- Browser-side Web Crypto architecture: the frontend crypto engine executes client-side and never sends plaintext, passphrases, or keys to the backend.
+- Browser-side Web Crypto architecture: the frontend crypto engine executes client-side and never sends plaintext, passphrases, or keys to the backend. The Cryptography Lab UI does not call `/api/crypto/*`; every interactive operation runs locally in the page.
+- Backend crypto endpoints (`/api/crypto/hash`, `/encrypt`, `/decrypt`, `/encode`, `/decode`) are **authenticated** (`@require_auth`) and sized-limited; they log and store nothing.
 - Use of vetted primitives only: AES-256-GCM, PBKDF2-HMAC-SHA256, and cryptographically secure randomness (`crypto.getRandomValues()` / `os.urandom`).
+- The browser AES passphrase is capped at **512 characters** (enforced by the engine itself, not only by the input field); PBKDF2 remains at **600,000 iterations** and AES remains **AES-256-GCM**. Do not document a reduced iteration count.
 - SHA-1 and MD5 are exposed solely for educational/deprecation demonstrations and must be described as deprecated and inappropriate for new security-sensitive systems.

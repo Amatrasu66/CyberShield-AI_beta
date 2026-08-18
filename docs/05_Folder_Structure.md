@@ -15,7 +15,7 @@ CyberShield-AI/
 ## Frontend (`frontend/`)
 - React + TypeScript + Tailwind CSS + Vite
 - `src/components/` — reusable UI components
-- `src/pages/` — route pages (Dashboard, WebsiteScanner, EmailDetector, PasswordAnalyzer, LogAnalyzer, SQLPlayground, Reports, Workspace pages, Auth)
+- `src/pages/` — route pages (Dashboard, WebsiteScanner, EmailDetector, PasswordAnalyzer, LogAnalyzer, SQLPlayground, CryptographyLab, Reports, Workspace pages, Auth)
 - `src/lib/` — client libraries, incl. `cryptoEngine.ts` and `cryptoEngine.selftest.ts` (Web Crypto engine)
 - `src/types/` — TypeScript interfaces, incl. `crypto.ts`
 - `src/context/` — React context (AuthProvider)
@@ -29,7 +29,7 @@ CyberShield-AI/
 - `app/middleware/` — JWT authentication middleware
 - `app/utils/` — helpers, validators, security utilities
 - `app/config/` — configuration
-- `tests/` — pytest suite (898 collected tests)
+- `tests/` — pytest suite (910 collected tests)
 
 ## Database
 - Supabase (PostgreSQL); the SQL Playground uses a transient in-memory SQLite sandbox instead of the production database.

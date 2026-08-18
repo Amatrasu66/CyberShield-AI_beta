@@ -18,7 +18,7 @@ Build a modern web application that combines cybersecurity utilities with lightw
 2. Phishing Email Detector (AI) — detector implemented with deterministic heuristics; AI inference planned, not yet implemented
 3. Password Strength Analyzer — implemented
 4. Log Analyzer (AI) — analyzer implemented with deterministic rules; AI inference planned, not yet implemented
-5. Cryptography Lab — backend API and browser crypto engine implemented; dedicated UI planned
+5. Cryptography Lab — implemented; browser-first Web Crypto lab (Hashing, Encoding, AES-256-GCM, HMAC-SHA256, secure randomness) with authenticated backend crypto endpoints
 6. SQL Injection Playground — implemented (isolated in-memory SQLite sandbox)
 7. Dashboard — implemented
 8. PDF Report Generator — implemented

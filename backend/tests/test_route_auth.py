@@ -43,6 +43,11 @@ class TestProtectedRoutesRequireAuth:
         ("post", "/api/reports/generate", {"title": "Audit"}),
         ("post", "/api/sql/run", {"scenario": "login", "payload": "' OR '1'='1"}),
         ("get", "/api/sql/scenarios", None),
+        ("post", "/api/crypto/hash", {"text": "abc"}),
+        ("post", "/api/crypto/encrypt", {"plaintext": "secret", "passphrase": "a-strong-passphrase-9"}),
+        ("post", "/api/crypto/decrypt", {"ciphertext": "x", "passphrase": "a-strong-passphrase-9", "salt": "x", "nonce": "x", "tag": "x"}),
+        ("post", "/api/crypto/encode", {"text": "hello"}),
+        ("post", "/api/crypto/decode", {"text": "aGVsbG8="}),
     ])
     def test_missing_token_returns_401(self, client, method, path, json):
         response = getattr(client, method)(path, json=json)
@@ -51,6 +56,7 @@ class TestProtectedRoutesRequireAuth:
     @pytest.mark.parametrize("method,path,json", [
         ("post", "/api/email/analyze", {"content": "hello"}),
         ("get", "/api/reports", None),
+        ("post", "/api/crypto/hash", {"text": "abc"}),
     ])
     def test_invalid_token_returns_401(self, client, method, path, json):
         response = getattr(client, method)(
@@ -136,6 +142,38 @@ class TestProtectedRoutesAuthenticated:
         response = client.get("/api/sql/scenarios", headers=auth_headers)
         assert response.status_code == 200
         assert set(response.get_json()["data"]) == {"login", "union", "boolean", "comment"}
+
+    @pytest.mark.parametrize("path,json", [
+        ("/api/crypto/hash", {"text": "abc", "algorithm": "sha256"}),
+        ("/api/crypto/encrypt", {"plaintext": "secret", "passphrase": "a-strong-passphrase-9"}),
+        ("/api/crypto/encode", {"text": "hello", "encoding": "base64"}),
+        ("/api/crypto/decode", {"text": "aGVsbG8=", "encoding": "base64"}),
+    ])
+    def test_crypto_endpoints_authenticated(self, client, auth_headers, path, json):
+        response = client.post(path, json=json, headers=auth_headers)
+        assert response.status_code == 200
+
+    def test_crypto_decrypt_authenticated(self, client, auth_headers):
+        enc = client.post(
+            "/api/crypto/encrypt",
+            json={"plaintext": "secret", "passphrase": "a-strong-passphrase-9"},
+            headers=auth_headers,
+        )
+        assert enc.status_code == 200
+        payload = enc.get_json()["data"]
+        dec = client.post(
+            "/api/crypto/decrypt",
+            json={
+                "ciphertext": payload["ciphertext"],
+                "passphrase": "a-strong-passphrase-9",
+                "salt": payload["salt"],
+                "nonce": payload["nonce"],
+                "tag": payload["tag"],
+            },
+            headers=auth_headers,
+        )
+        assert dec.status_code == 200
+        assert dec.get_json()["data"]["plaintext"] == "secret"
 
 
 class TestUserScoping:

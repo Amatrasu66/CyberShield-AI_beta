@@ -23,6 +23,7 @@ import { Badge, Button, Card } from '../components/ui';
 import { cryptoConcepts, cryptoModules, type CryptoModuleId } from '../data/cryptoContent';
 import {
   AES_KEY_DERIVATION,
+  CRYPTO_PASSPHRASE_MAX_LENGTH,
   CryptoEngineError,
   aesDecrypt,
   aesEncrypt,
@@ -172,6 +173,7 @@ function PassphraseInput({ id, value, visible, disabled, onChange, onToggle }: P
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
+        maxLength={CRYPTO_PASSPHRASE_MAX_LENGTH}
         autoComplete="new-password"
         className={cn(INPUT_CLASS, 'w-full pr-11')}
       />
@@ -788,7 +790,7 @@ function AesModule() {
                 className={cn(TEXTAREA_CLASS, 'resize-none')}
               />
             </Field>
-            <Field id="aes-encrypt-pass" label="Passphrase" hint="At least 8 characters. This stretches into the 256-bit AES key via PBKDF2 (600,000 iterations), so the operation takes a moment.">
+            <Field id="aes-encrypt-pass" label="Passphrase" hint="8 to 512 characters. This stretches into the 256-bit AES key via PBKDF2 (600,000 iterations), so the operation takes a moment.">
               <PassphraseInput
                 id="aes-encrypt-pass"
                 value={passphrase}

@@ -423,6 +423,41 @@ async function main(): Promise<void> {
   await rejectsWithCode('short passphrase rejected', 'INVALID_ARGUMENT', async () => {
     return aesEncrypt('metadata probe', 'short');
   });
+  await check('512-character passphrase accepted', async () => {
+    const longPassphrase = 'a'.repeat(512);
+    const encrypted = await aesEncrypt('boundary probe', longPassphrase);
+    const decrypted = await aesDecrypt({
+      ciphertext: encrypted.ciphertext,
+      passphrase: longPassphrase,
+      salt: encrypted.salt,
+      iv: encrypted.iv,
+      tag: encrypted.tag,
+    });
+    assertEqual(decrypted.plaintext, 'boundary probe');
+  });
+  await rejectsWithCode('513-character passphrase rejected', 'PASSPHRASE_TOO_LONG', async () => {
+    return aesEncrypt('boundary probe', 'a'.repeat(513));
+  });
+  await rejectsWithCode('very large passphrase rejected immediately', 'PASSPHRASE_TOO_LONG', async () => {
+    return aesDecrypt({
+      ciphertext: 'ciphertext',
+      passphrase: 'a'.repeat(100_000),
+      salt: 'salt',
+      iv: 'iv',
+      tag: 'tag',
+    });
+  });
+  await check('passphrase-too-long error never contains the passphrase', async () => {
+    const longPassphrase = 'x'.repeat(513);
+    let message = '';
+    try {
+      await aesEncrypt('probe', longPassphrase);
+    } catch (error) {
+      message = error instanceof Error ? error.message : '';
+    }
+    assertTrue(!message.includes('x'.repeat(16)), 'passphrase leaked into error');
+    assertTrue(message.includes('too long'), 'error should mention the length limit');
+  });
   await check('errors never leak passphrase or plaintext', async () => {
     const encrypted = await aesEncrypt('ultra sensitive secret', PASSPHRASE);
     let message = '';

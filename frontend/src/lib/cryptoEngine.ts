@@ -16,6 +16,8 @@ import type {
 
 export const PBKDF2_ITERATIONS = 600_000;
 
+export const CRYPTO_PASSPHRASE_MAX_LENGTH = 512;
+
 export const AES_KEY_LENGTH_BITS = 256;
 export const AES_KEY_LENGTH_BYTES = 32;
 export const GCM_IV_LENGTH_BITS = 96;
@@ -49,6 +51,7 @@ const HEX_TABLE = (() => {
 
 export const CRYPTO_CONSTANTS = {
   PBKDF2_ITERATIONS,
+  CRYPTO_PASSPHRASE_MAX_LENGTH,
   AES_KEY_LENGTH_BITS,
   AES_KEY_LENGTH_BYTES,
   GCM_IV_LENGTH_BITS,
@@ -307,6 +310,12 @@ export async function hashText(text: string, algorithm: CryptoHashAlgorithm): Pr
 function assertPassphrase(passphrase: string): void {
   if (typeof passphrase !== 'string' || passphrase.length < 8) {
     cryptoError('INVALID_ARGUMENT', 'Passphrase must be at least 8 characters');
+  }
+  if (passphrase.length > CRYPTO_PASSPHRASE_MAX_LENGTH) {
+    cryptoError(
+      'PASSPHRASE_TOO_LONG',
+      `Passphrase is too long; it must be at most ${CRYPTO_PASSPHRASE_MAX_LENGTH} characters`,
+    );
   }
 }
 

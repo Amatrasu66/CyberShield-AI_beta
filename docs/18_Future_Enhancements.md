@@ -1,8 +1,7 @@
 # Future Enhancements
 
 ## Planned Features
-- Cryptography Lab UI (next major step; `/cryptography-lab` is currently a generic placeholder page)
-- Cryptography security/red-team verification, manual/integration testing, and a final crypto security audit
+- Final cryptography security audit (the Cryptography Lab UI, backend endpoint authentication, the 512-char passphrase cap, and the browser self-test suite are delivered; a final deep audit pass remains)
 - AI-powered URL classifier
 - Trained ML inference for the email detector and log analyzer (after the core functionality is stable; modules are placeholders today)
 - Advanced log anomaly detection

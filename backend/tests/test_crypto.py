@@ -92,13 +92,19 @@ class TestEncodeDecode:
 
 
 class TestCryptoEndpoints:
-    def test_hash_endpoint(self, client):
-        response = client.post("/api/crypto/hash", json={"text": "abc", "algorithm": "sha256"})
+    def test_hash_endpoint(self, client, auth_headers):
+        response = client.post(
+            "/api/crypto/hash", json={"text": "abc", "algorithm": "sha256"}, headers=auth_headers
+        )
         assert response.status_code == 200
         assert response.get_json()["data"]["digest_length_bits"] == 256
 
-    def test_encrypt_decrypt_endpoint_round_trip(self, client):
-        enc = client.post("/api/crypto/encrypt", json={"plaintext": "secret", "passphrase": "a-strong-passphrase-9"})
+    def test_encrypt_decrypt_endpoint_round_trip(self, client, auth_headers):
+        enc = client.post(
+            "/api/crypto/encrypt",
+            json={"plaintext": "secret", "passphrase": "a-strong-passphrase-9"},
+            headers=auth_headers,
+        )
         assert enc.status_code == 200
         payload = enc.get_json()["data"]
         dec = client.post("/api/crypto/decrypt", json={
@@ -107,24 +113,41 @@ class TestCryptoEndpoints:
             "salt": payload["salt"],
             "nonce": payload["nonce"],
             "tag": payload["tag"],
-        })
+        }, headers=auth_headers)
         assert dec.status_code == 200
         assert dec.get_json()["data"]["plaintext"] == "secret"
 
-    def test_encrypt_requires_passphrase(self, client):
-        response = client.post("/api/crypto/encrypt", json={"plaintext": "hi", "passphrase": "short"})
+    def test_encrypt_requires_passphrase(self, client, auth_headers):
+        response = client.post(
+            "/api/crypto/encrypt",
+            json={"plaintext": "hi", "passphrase": "short"},
+            headers=auth_headers,
+        )
         assert response.status_code == 400
 
-    def test_hash_unknown_algorithm(self, client):
-        response = client.post("/api/crypto/hash", json={"text": "x", "algorithm": "nope"})
+    def test_hash_unknown_algorithm(self, client, auth_headers):
+        response = client.post(
+            "/api/crypto/hash", json={"text": "x", "algorithm": "nope"}, headers=auth_headers
+        )
         assert response.status_code == 400
         assert response.get_json()["error"]["code"] == "VALIDATION_ERROR"
 
-    def test_encode_endpoint(self, client):
-        response = client.post("/api/crypto/encode", json={"text": "hello", "encoding": "base64"})
+    def test_encode_endpoint(self, client, auth_headers):
+        response = client.post(
+            "/api/crypto/encode", json={"text": "hello", "encoding": "base64"}, headers=auth_headers
+        )
         assert response.status_code == 200
         assert response.get_json()["data"]["encoded"] == "aGVsbG8="
 
-    def test_decode_invalid_input(self, client):
-        response = client.post("/api/crypto/decode", json={"text": "!!invalid!!", "encoding": "base64"})
+    def test_decode_endpoint(self, client, auth_headers):
+        response = client.post(
+            "/api/crypto/decode", json={"text": "aGVsbG8=", "encoding": "base64"}, headers=auth_headers
+        )
+        assert response.status_code == 200
+        assert response.get_json()["data"]["decoded"] == "hello"
+
+    def test_decode_invalid_input(self, client, auth_headers):
+        response = client.post(
+            "/api/crypto/decode", json={"text": "!!invalid!!", "encoding": "base64"}, headers=auth_headers
+        )
         assert response.status_code == 400

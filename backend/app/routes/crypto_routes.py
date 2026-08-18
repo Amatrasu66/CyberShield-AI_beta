@@ -10,6 +10,7 @@ POST /api/crypto/decode
 
 from flask import Blueprint
 
+from ..middleware.auth_middleware import require_auth
 from ..services import CryptoService
 from ..utils.helpers import success_response
 from ..utils.validators import require_json, validate_string
@@ -24,6 +25,7 @@ def _crypto_max():
 
 
 @crypto_bp.post("/hash")
+@require_auth
 def hash_text():
     data = require_json()
     text = data.get("text")
@@ -35,6 +37,7 @@ def hash_text():
 
 
 @crypto_bp.post("/encrypt")
+@require_auth
 def encrypt_text():
     data = require_json()
     plaintext = data.get("plaintext")
@@ -46,6 +49,7 @@ def encrypt_text():
 
 
 @crypto_bp.post("/decrypt")
+@require_auth
 def decrypt_text():
     data = require_json()
     ciphertext = data.get("ciphertext")
@@ -60,6 +64,7 @@ def decrypt_text():
 
 
 @crypto_bp.post("/encode")
+@require_auth
 def encode_text():
     data = require_json()
     text = data.get("text")
@@ -71,6 +76,7 @@ def encode_text():
 
 
 @crypto_bp.post("/decode")
+@require_auth
 def decode_text():
     data = require_json()
     text = data.get("text")
