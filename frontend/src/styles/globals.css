@@ -14,4 +14,12 @@
   .panel { @apply rounded-lg border bg-surface-container; }
   .eyebrow { @apply font-mono text-xs font-medium uppercase tracking-[0.16em] text-on-surface-variant; }
   .grid-glow { background-image: linear-gradient(to right, rgb(192 193 255 / 0.035) 1px, transparent 1px), linear-gradient(to bottom, rgb(192 193 255 / 0.035) 1px, transparent 1px); background-size: 32px 32px; }
+  .indeterminate-track { position: relative; height: 4px; width: 100%; overflow: hidden; border-radius: 9999px; background: rgb(192 193 255 / 0.2); }
+  .indeterminate-track::after { content: ''; position: absolute; inset-block: 0; width: 40%; border-radius: 9999px; background: rgb(192 193 255 / 0.9); animation: indeterminate-slide 1.2s ease-in-out infinite; }
+}
+
+@keyframes indeterminate-slide {
+  0% { transform: translateX(-100%); }
+  60% { transform: translateX(0%); }
+  100% { transform: translateX(300%); }
 }

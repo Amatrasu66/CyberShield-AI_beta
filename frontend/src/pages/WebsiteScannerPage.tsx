@@ -3,6 +3,8 @@ import { Play, Loader2, AlertCircle, CheckCircle, XCircle, RefreshCw, Shield } f
 import { PageHeader } from '../components/PageHeader';
 import { Badge, Button, Card } from '../components/ui';
 import { apiClient, ApiClientError } from '../services/apiClient';
+import { useSlowRequest } from '../hooks/useSlowRequest';
+import { SlowRequestNotice } from '../components/SlowRequestNotice';
 
 interface ScanCheck {
   readonly name: string;
@@ -30,6 +32,7 @@ export function WebsiteScannerPage() {
   const [isScanning, setIsScanning] = useState(false);
   const [result, setResult] = useState<ScanResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { run, isSlow, elapsedSeconds } = useSlowRequest();
 
   const handleScan = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -40,7 +43,7 @@ export function WebsiteScannerPage() {
     setResult(null);
 
     try {
-      const scanResult = await apiClient.post<ScanResult>('/scanner/website', { url: url.trim() });
+      const scanResult = await run(() => apiClient.post<ScanResult>('/scanner/website', { url: url.trim() }));
       setResult(scanResult);
     } catch (err) {
       if (err instanceof ApiClientError) {
@@ -104,6 +107,9 @@ export function WebsiteScannerPage() {
                 <> <Play size={16} className="mr-2" /> Start security scan </ >
               )}
             </Button>
+            {isScanning && isSlow && (
+              <SlowRequestNotice elapsedSeconds={elapsedSeconds} />
+            )}
             {error && (
               <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 p-3 rounded border">
                 <AlertCircle size={16} /> {error}

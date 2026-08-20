@@ -18,6 +18,8 @@ import type { LucideIcon } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { Badge, Button, Card } from '../components/ui';
 import { apiClient, ApiClientError } from '../services/apiClient';
+import { useSlowRequest } from '../hooks/useSlowRequest';
+import { SlowRequestNotice } from '../components/SlowRequestNotice';
 import type { LogAnalysisResult } from '../types';
 
 const MAX_CONTENT_LENGTH = 500_000;
@@ -106,6 +108,7 @@ export function LogAnalyzerPage() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [result, setResult] = useState<LogAnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { run, isSlow, elapsedSeconds } = useSlowRequest();
 
   useEffect(() => {
     return () => {
@@ -129,10 +132,10 @@ export function LogAnalyzerPage() {
     setResult(null);
 
     try {
-      const analysis = await apiClient.post<LogAnalysisResult>('/logs/analyze', {
+      const analysis = await run(() => apiClient.post<LogAnalysisResult>('/logs/analyze', {
         content,
         log_format: logFormat,
-      });
+      }));
       setResult(analysis);
     } catch (err) {
       if (err instanceof ApiClientError) {
@@ -215,6 +218,10 @@ export function LogAnalyzerPage() {
                 </>
               )}
             </Button>
+
+            {isAnalyzing && isSlow && (
+              <SlowRequestNotice elapsedSeconds={elapsedSeconds} />
+            )}
 
             {error && (
               <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 p-3 rounded border">

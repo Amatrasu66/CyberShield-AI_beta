@@ -16,6 +16,8 @@ import {
 import { PageHeader } from '../components/PageHeader';
 import { Badge, Button, Card, DataTable } from '../components/ui';
 import { LoadingStates } from '../components/LoadingStates';
+import { useSlowRequest } from '../hooks/useSlowRequest';
+import { SlowRequestNotice } from '../components/SlowRequestNotice';
 import { apiClient, ApiClientError } from '../services/apiClient';
 import type { SqlRunRequest, SqlRunResult, SqlScenario, SqlResultSet } from '../types';
 
@@ -162,12 +164,13 @@ export function SQLPlaygroundPage() {
   const [runState, setRunState] = useState<'idle' | 'running' | 'success' | 'error'>('idle');
   const [result, setResult] = useState<SqlRunResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { run, isSlow, elapsedSeconds } = useSlowRequest();
 
   const loadScenarios = useCallback(async () => {
     setScenarioLoading(true);
     setScenarioError(null);
     try {
-      const data = await apiClient.get<Record<string, SqlScenario>>('/sql/scenarios');
+      const data = await run(() => apiClient.get<Record<string, SqlScenario>>('/sql/scenarios'));
       const entries = Object.entries(data ?? {});
       if (entries.length === 0) {
         setScenarioError('No lab scenarios are available right now.');
@@ -182,7 +185,7 @@ export function SQLPlaygroundPage() {
     } finally {
       setScenarioLoading(false);
     }
-  }, []);
+  }, [run]);
 
   useEffect(() => {
     void loadScenarios();
@@ -226,7 +229,7 @@ export function SQLPlaygroundPage() {
     setResult(null);
     try {
       const requestBody: SqlRunRequest = { scenario: selectedId, payload };
-      const runResult = await apiClient.post<SqlRunResult>('/sql/run', requestBody);
+      const runResult = await run(() => apiClient.post<SqlRunResult>('/sql/run', requestBody));
       if (runResult === undefined || runResult === null || typeof runResult !== 'object' || !('vulnerable_result' in runResult)) {
         setError('The lab returned an unexpected response. Please try again.');
         setRunState('error');
@@ -285,6 +288,7 @@ export function SQLPlaygroundPage() {
 
         {scenarioLoading ? (
           <div className="mt-5" aria-busy="true" aria-label="Loading lab scenarios">
+            {isSlow && <SlowRequestNotice elapsedSeconds={elapsedSeconds} className="mb-4" />}
             <LoadingStates rows={2} />
           </div>
         ) : scenarioError !== null ? (
@@ -372,6 +376,10 @@ export function SQLPlaygroundPage() {
                 </p>
               )}
             </div>
+
+            {runState === 'running' && isSlow && (
+              <SlowRequestNotice elapsedSeconds={elapsedSeconds} />
+            )}
 
             {error !== null && (
               <div role="alert" className="flex items-start gap-2 rounded border border-danger/30 bg-danger/5 p-3 text-sm text-destructive">

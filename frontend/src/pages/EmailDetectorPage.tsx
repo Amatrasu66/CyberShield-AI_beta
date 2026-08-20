@@ -3,6 +3,8 @@ import { Play, Loader2, AlertCircle, RefreshCw, MailWarning, ClipboardType, Uplo
 import { PageHeader } from '../components/PageHeader';
 import { Badge, Button, Card } from '../components/ui';
 import { apiClient, ApiClientError } from '../services/apiClient';
+import { useSlowRequest } from '../hooks/useSlowRequest';
+import { SlowRequestNotice } from '../components/SlowRequestNotice';
 import type { EmailAnalysisResult, EmailIndicatorSeverity, EmailRiskLevel } from '../types';
 
 const MAX_CONTENT_LENGTH = 50000;
@@ -34,6 +36,7 @@ export function EmailDetectorPage() {
   const [result, setResult] = useState<EmailAnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { run, isSlow, elapsedSeconds } = useSlowRequest();
 
   const switchMode = (next: InputMode) => {
     if (next === mode) return;
@@ -98,12 +101,12 @@ export function EmailDetectorPage() {
 
     try {
       if (mode === 'text') {
-        const analysis = await apiClient.post<EmailAnalysisResult>('/email/analyze', { content: content.trim() });
+        const analysis = await run(() => apiClient.post<EmailAnalysisResult>('/email/analyze', { content: content.trim() }));
         setResult(analysis);
       } else {
         const formData = new FormData();
         formData.append('file', pdfFile as File);
-        const analysis = await apiClient.postForm<EmailAnalysisResult>('/email/analyze', formData);
+        const analysis = await run(() => apiClient.postForm<EmailAnalysisResult>('/email/analyze', formData));
         setResult(analysis);
       }
     } catch (err) {
@@ -271,6 +274,9 @@ export function EmailDetectorPage() {
                 </>
               )}
             </Button>
+            {isAnalyzing && isSlow && (
+              <SlowRequestNotice elapsedSeconds={elapsedSeconds} />
+            )}
             {error && (
               <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 p-3 rounded border">
                 <AlertCircle size={16} /> {error}

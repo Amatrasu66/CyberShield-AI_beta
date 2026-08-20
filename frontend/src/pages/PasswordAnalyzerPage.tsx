@@ -26,6 +26,8 @@ import {
 import { PageHeader } from '../components/PageHeader';
 import { Badge, Button, Card } from '../components/ui';
 import { apiClient, ApiClientError } from '../services/apiClient';
+import { useSlowRequest } from '../hooks/useSlowRequest';
+import { SlowRequestNotice } from '../components/SlowRequestNotice';
 import type { PasswordAnalysisResult, PasswordStrengthLabel, PasswordWeakness, PasswordScoreBreakdown, PasswordChecklistItem, PasswordGenerateResult } from '../types';
 import type { LucideIcon } from 'lucide-react';
 
@@ -162,6 +164,7 @@ export function PasswordAnalyzerPage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
   const passwordInputRef = useRef<HTMLInputElement>(null);
+  const { run, isSlow, elapsedSeconds } = useSlowRequest();
 
   useEffect(() => {
     return () => {
@@ -179,7 +182,7 @@ export function PasswordAnalyzerPage() {
     setError(null);
 
     try {
-      const analysis = await apiClient.post<PasswordAnalysisResult>('/password/analyze', { password: password.trim() });
+      const analysis = await run(() => apiClient.post<PasswordAnalysisResult>('/password/analyze', { password: password.trim() }));
       setComparison(prev => ({
         ...prev,
         current: analysis,
@@ -208,10 +211,10 @@ export function PasswordAnalyzerPage() {
     setError(null);
 
     try {
-      const response = await apiClient.post<PasswordGenerateResult>('/password/generate', {
+      const response = await run(() => apiClient.post<PasswordGenerateResult>('/password/generate', {
         type,
         ...options,
-      });
+      }));
       setGeneratedPassword(response);
       setCopySuccess(false);
     } catch (err) {
@@ -231,7 +234,7 @@ export function PasswordAnalyzerPage() {
     setError(null);
 
     try {
-      const analysis = await apiClient.post<PasswordAnalysisResult>('/password/analyze', { password: generatedPassword.password });
+      const analysis = await run(() => apiClient.post<PasswordAnalysisResult>('/password/analyze', { password: generatedPassword.password }));
       setComparison(prev => ({
         ...prev,
         generated: analysis,
@@ -326,6 +329,10 @@ export function PasswordAnalyzerPage() {
                 </>
               )}
             </Button>
+
+            {isAnalyzing && isSlow && (
+              <SlowRequestNotice elapsedSeconds={elapsedSeconds} />
+            )}
 
             {error && (
               <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 p-3 rounded border">
@@ -610,6 +617,12 @@ export function PasswordAnalyzerPage() {
             </Button>
           </div>
         </div>
+
+        {isGenerating && isSlow && (
+          <div className="border-t p-5">
+            <SlowRequestNotice elapsedSeconds={elapsedSeconds} />
+          </div>
+        )}
 
         {/* Generated Password Display */}
         {generatedPassword && (

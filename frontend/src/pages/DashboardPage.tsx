@@ -5,6 +5,8 @@ import { Badge, Button, Card, DataTable } from '../components/ui';
 import { NewScanModal } from '../components/NewScanModal';
 import { PageHeader } from '../components/PageHeader';
 import { apiClient } from '../services/apiClient';
+import { useSlowRequest } from '../hooks/useSlowRequest';
+import { SlowRequestNotice } from '../components/SlowRequestNotice';
 import type { DashboardData, DashboardMetric } from '../types';
 
 export interface DashboardPageProps {
@@ -46,12 +48,13 @@ export function DashboardPage({ compact = false }: DashboardPageProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isNewScanOpen, setIsNewScanOpen] = useState(false);
+  const slowRequest = useSlowRequest();
 
   const fetchDashboard = async () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await apiClient.get<DashboardData>('/dashboard');
+      const response = await slowRequest.run(() => apiClient.get<DashboardData>('/dashboard'));
       setData(response);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load dashboard';
@@ -80,6 +83,9 @@ export function DashboardPage({ compact = false }: DashboardPageProps) {
           description="Monitor assessment activity and focus your response on the signals that matter."
           actions={<NewScanButton onClick={() => setIsNewScanOpen(true)} />}
         />
+        {slowRequest.isSlow && (
+          <SlowRequestNotice elapsedSeconds={slowRequest.elapsedSeconds} className="mb-5" />
+        )}
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {['Security score', 'Scans completed', 'Threats detected', 'Assets monitored'].map((label) => (
             <Card key={label} className="p-5 animate-pulse">

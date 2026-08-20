@@ -3,6 +3,8 @@ import { AlertCircle, CheckCircle, FileSearch, FileText, Loader2, Plus, RefreshC
 import { PageHeader } from '../components/PageHeader';
 import { Badge, Button, Card, TextInput } from '../components/ui';
 import { apiClient, ApiClientError } from '../services/apiClient';
+import { useSlowRequest } from '../hooks/useSlowRequest';
+import { SlowRequestNotice } from '../components/SlowRequestNotice';
 import type { Report, ReportGenerateRequest } from '../types';
 
 const TITLE_MAX_LENGTH = 200;
@@ -70,6 +72,7 @@ export function ReportsPage() {
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [openError, setOpenError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const { run, isSlow, elapsedSeconds } = useSlowRequest();
 
   const fetchReports = useCallback(async (mode: 'initial' | 'refresh') => {
     if (mode === 'initial') {
@@ -79,7 +82,7 @@ export function ReportsPage() {
     }
     setError(null);
     try {
-      const data = await apiClient.get<Report[]>('/reports');
+      const data = await run(() => apiClient.get<Report[]>('/reports'));
       setReports(data);
     } catch (err) {
       setError(getApiErrorMessage(err, 'Unable to load reports. Please try again.'));
@@ -90,7 +93,7 @@ export function ReportsPage() {
         setIsRefreshing(false);
       }
     }
-  }, []);
+  }, [run]);
 
   useEffect(() => {
     fetchReports('initial');
@@ -108,7 +111,7 @@ export function ReportsPage() {
     const body: ReportGenerateRequest = trimmed.length > 0 ? { title: trimmed } : {};
 
     try {
-      const created = await apiClient.post<Report>('/reports/generate', body);
+      const created = await run(() => apiClient.post<Report>('/reports/generate', body));
       setReports((prev) => [created, ...(prev ?? [])]);
       setTitle('');
       setSuccessMessage('Your security report was generated successfully.');
@@ -126,7 +129,7 @@ export function ReportsPage() {
     setOpenError(null);
 
     try {
-      const fresh = await apiClient.get<Report[]>('/reports');
+      const fresh = await run(() => apiClient.get<Report[]>('/reports'));
       setReports(fresh);
       const found = fresh.find((report) => report.id === reportId);
       if (!found || !found.signed_url) {
@@ -172,6 +175,12 @@ export function ReportsPage() {
         }
       />
 
+      {isSlow && !isLoading && !isGenerating && (
+        <div className="mb-5">
+          <SlowRequestNotice elapsedSeconds={elapsedSeconds} />
+        </div>
+      )}
+
       <Card className="p-5">
         <p className="font-display text-lg font-semibold">Generate report</p>
         <form onSubmit={handleGenerate} className="mt-5 grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
@@ -201,13 +210,19 @@ export function ReportsPage() {
         </form>
 
         {isGenerating && (
-          <div className="mt-4 flex items-start gap-2 rounded border bg-surface-low p-3 text-sm text-on-surface-variant">
-            <Loader2 size={16} className="mt-0.5 shrink-0 animate-spin text-primary" />
-            <p>
-              Generating security report... Your latest scan results are being aggregated and compiled
-              into a PDF. This may take a moment.
-            </p>
-          </div>
+          isSlow ? (
+            <div className="mt-4">
+              <SlowRequestNotice elapsedSeconds={elapsedSeconds} />
+            </div>
+          ) : (
+            <div className="mt-4 flex items-start gap-2 rounded border bg-surface-low p-3 text-sm text-on-surface-variant">
+              <Loader2 size={16} className="mt-0.5 shrink-0 animate-spin text-primary" />
+              <p>
+                Generating security report... Your latest scan results are being aggregated and compiled
+                into a PDF. This may take a moment.
+              </p>
+            </div>
+          )
         )}
 
         {successMessage && (
@@ -224,11 +239,14 @@ export function ReportsPage() {
       </Card>
 
       {isLoading ? (
-        <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {Array.from({ length: 3 }).map((_, index) => (
-            <ReportCardSkeleton key={index} />
-          ))}
-        </div>
+        <>
+          {isSlow && <div className="mt-5"><SlowRequestNotice elapsedSeconds={elapsedSeconds} /></div>}
+          <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {Array.from({ length: 3 }).map((_, index) => (
+              <ReportCardSkeleton key={index} />
+            ))}
+          </div>
+        </>
       ) : error && !hasReports ? (
         <Card className="mt-5 p-8 text-center">
           <div className="text-danger" role="alert">
