@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import { BarChart3, Bug, FileText, GraduationCap, KeyRound, LayoutDashboard, MailWarning, ScanSearch, Settings, ShieldCheck, UserRound } from 'lucide-react';
+import { BarChart3, Bug, FileText, GraduationCap, KeyRound, LayoutDashboard, MailWarning, ScanSearch, Settings, ShieldCheck, UserRound, Terminal } from 'lucide-react';
 
 export type NavItem = { label: string; to: string; icon: LucideIcon };
 export const navigation: readonly NavItem[] = [
@@ -7,7 +7,7 @@ export const navigation: readonly NavItem[] = [
   { label: 'Email Detector', to: '/phishing-detector', icon: MailWarning }, { label: 'Password Analyzer', to: '/password-analyzer', icon: KeyRound },
   { label: 'Log Analyzer', to: '/log-analyzer', icon: BarChart3 }, { label: 'Reports', to: '/reports', icon: FileText },
   { label: 'SQL Playground', to: '/sql-playground', icon: Bug }, { label: 'Cryptography Lab', to: '/cryptography-lab', icon: ShieldCheck },
-  { label: 'Tutorials', to: '/tutorials', icon: GraduationCap },
+  { label: 'Port Scanner', to: '/port-scanner', icon: Terminal }, { label: 'Tutorials', to: '/tutorials', icon: GraduationCap },
 ];
 
 export const userNav: readonly NavItem[] = [{ label: 'Profile', to: '/profile', icon: UserRound }, { label: 'Settings', to: '/settings', icon: Settings }];
@@ -27,6 +27,7 @@ export const tools: Record<string, ToolSpec> = {
   '/website-scanner': { eyebrow: 'Attack surface', title: 'Website Security Scanner', description: 'Inspect a public URL for headers, TLS posture, and common configuration weaknesses.', inputLabel: 'Target URL', inputPlaceholder: 'https://example.com', action: 'Start security scan', resultTitle: 'Overall security score', resultValue: '84 / 100', resultDetail: 'No critical vulnerabilities identified in this demo result.', tableHeaders: ['Check', 'Status', 'Finding'], rows: [['SSL certificate', 'Passed', 'Valid for 297 days'], ['Security headers', 'Warning', '2 recommended headers missing'], ['Cookie policy', 'Passed', 'Secure and HttpOnly configured']], status: 'warning' },
   '/phishing-detector': { eyebrow: 'Email intelligence', title: 'Phishing Email Detector', description: 'Analyze suspicious message content for phishing language and risky indicators.', inputLabel: 'Email content', inputPlaceholder: 'Paste a suspicious email message here…', action: 'Analyze email', resultTitle: 'Risk classification', resultValue: 'Likely phishing', resultDetail: 'Demo indicators: urgent language, mismatched sender, and credential request.', tableHeaders: ['Indicator', 'Severity', 'Evidence'], rows: [['Urgency language', 'High', '“Action required immediately”'], ['Suspicious link', 'High', 'Lookalike domain'], ['Personalization', 'Low', 'Generic greeting']], status: 'danger' },
   '/password-analyzer': { eyebrow: 'Credential hygiene', title: 'Password Strength Analyzer', description: 'Measure password strength using length, entropy, patterns, and common exposure signals.', inputLabel: 'Password to assess', inputPlaceholder: 'Enter a demo password', action: 'Analyze password', resultTitle: 'Strength rating', resultValue: 'Strong', resultDetail: 'Estimated crack time exceeds one century in this static example.', tableHeaders: ['Signal', 'Status', 'Detail'], rows: [['Length', 'Passed', '18 characters'], ['Character variety', 'Passed', 'Upper, lower, number, symbol'], ['Known patterns', 'Passed', 'No common sequence']], status: 'success' },
+  '/port-scanner': { eyebrow: 'Attack surface', title: 'Port Scanner', description: 'Perform a TCP connect scan against a target host to discover open ports, identify services, and capture banners.', inputLabel: 'Target', inputPlaceholder: 'example.com or 192.0.2.1', action: 'Start port scan', resultTitle: 'Risk level', resultValue: 'Medium', resultDetail: '3 open ports found out of 20 scanned.', tableHeaders: ['Port', 'Service', 'State', 'Banner'], rows: [['22', 'ssh', 'Open', 'SSH-2.0-OpenSSH_8.9'], ['80', 'http', 'Open', 'nginx/1.18.0'], ['443', 'https', 'Open', '']], status: 'warning' },
 };
 
 export const authContent = {

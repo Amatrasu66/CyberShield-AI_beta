@@ -12,6 +12,7 @@ from .dashboard_service import DashboardService
 from .email_service import EmailService
 from .log_service import LogService
 from .password_service import PasswordGenerator, PasswordService
+from .port_scanner_service import PortScannerService
 from .report_service import ReportService
 from .scanner_service import ScannerService
 from .sql_service import SQLPlaygroundService
@@ -24,6 +25,7 @@ __all__ = [
     "LogService",
     "PasswordGenerator",
     "PasswordService",
+    "PortScannerService",
     "ReportService",
     "ScannerService",
     "SQLPlaygroundService",

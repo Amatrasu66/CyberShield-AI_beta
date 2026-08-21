@@ -79,6 +79,15 @@ class Config:
         "SCANNER_USER_AGENT", "CyberShieldAI-Scanner/1.0 (educational assessment)"
     )
 
+    # --- Port Scanner ------------------------------------------------------
+    PORT_SCANNER_CONNECT_TIMEOUT = _env_int("PORT_SCANNER_CONNECT_TIMEOUT", 2)
+    PORT_SCANNER_TOTAL_TIMEOUT = _env_int("PORT_SCANNER_TOTAL_TIMEOUT", 30)
+    PORT_SCANNER_MAX_CONCURRENCY = _env_int("PORT_SCANNER_MAX_CONCURRENCY", 50)
+    PORT_SCANNER_MAX_PORTS = _env_int("PORT_SCANNER_MAX_PORTS", 100)
+    PORT_SCANNER_BANNER_TIMEOUT = _env_int("PORT_SCANNER_BANNER_TIMEOUT", 1)
+    PORT_SCANNER_BANNER_MAX_BYTES = _env_int("PORT_SCANNER_BANNER_MAX_BYTES", 256)
+    PORT_SCANNER_ALLOW_PRIVATE_ADDRESSES = _env_bool("PORT_SCANNER_ALLOW_PRIVATE_ADDRESSES", False)
+
     # --- Input limits -----------------------------------------------------
     PASSWORD_MAX_LENGTH = _env_int("PASSWORD_MAX_LENGTH", 4096)
     EMAIL_MAX_LENGTH = _env_int("EMAIL_MAX_LENGTH", 50_000)

@@ -104,6 +104,23 @@ CREATE TABLE IF NOT EXISTS log_scans (
 );
 
 -- ============================================================================
+-- Port Scans
+-- TCP connect scan results with per-port findings and risk scoring.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS port_scans (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    target TEXT NOT NULL,
+    resolved_ip TEXT,
+    ports_scanned INT NOT NULL,
+    open_ports JSONB,
+    scan_duration_ms INT,
+    risk_level TEXT CHECK (risk_level IN ('low', 'medium', 'high', 'critical')),
+    status TEXT CHECK (status IN ('completed', 'failed')) NOT NULL DEFAULT 'completed',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ============================================================================
 -- Reports
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS reports (
@@ -127,6 +144,8 @@ CREATE INDEX IF NOT EXISTS idx_password_scans_user_created
     ON password_scans (user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_log_scans_user_created
     ON log_scans (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_port_scans_user_created
+    ON port_scans (user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_reports_user_created
     ON reports (user_id, created_at DESC);
 
@@ -139,6 +158,7 @@ ALTER TABLE website_scans ENABLE ROW LEVEL SECURITY;
 ALTER TABLE email_scans ENABLE ROW LEVEL SECURITY;
 ALTER TABLE password_scans ENABLE ROW LEVEL SECURITY;
 ALTER TABLE log_scans ENABLE ROW LEVEL SECURITY;
+ALTER TABLE port_scans ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reports ENABLE ROW LEVEL SECURITY;
 
 -- profiles: owner-only SELECT / UPDATE (INSERT handled by the signup trigger).
@@ -164,6 +184,10 @@ CREATE POLICY "password_scans_owner_all" ON password_scans
 
 DROP POLICY IF EXISTS "log_scans_owner_all" ON log_scans;
 CREATE POLICY "log_scans_owner_all" ON log_scans
+    FOR ALL USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+
+DROP POLICY IF EXISTS "port_scans_owner_all" ON port_scans;
+CREATE POLICY "port_scans_owner_all" ON port_scans
     FOR ALL USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
 
 DROP POLICY IF EXISTS "reports_owner_all" ON reports;

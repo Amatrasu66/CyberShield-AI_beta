@@ -12,6 +12,7 @@ from .dashboard_routes import dashboard_bp
 from .email_routes import email_bp
 from .log_routes import log_bp
 from .password_routes import password_bp
+from .port_routes import port_bp
 from .report_routes import report_bp
 from .scanner_routes import scanner_bp
 from .sql_routes import sql_bp
@@ -25,6 +26,7 @@ def register_blueprints(app):
     app.register_blueprint(auth_bp, url_prefix=f"{prefix}/auth")
     app.register_blueprint(dashboard_bp, url_prefix=f"{prefix}/dashboard")
     app.register_blueprint(scanner_bp, url_prefix=f"{prefix}/scanner")
+    app.register_blueprint(port_bp, url_prefix=f"{prefix}/scanner")
     app.register_blueprint(email_bp, url_prefix=f"{prefix}/email")
     app.register_blueprint(password_bp, url_prefix=f"{prefix}/password")
     app.register_blueprint(log_bp, url_prefix=f"{prefix}/logs")

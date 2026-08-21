@@ -318,3 +318,69 @@ export interface SqlRunResult {
   readonly explanation: SqlExplanation;
   readonly sandbox: string;
 }
+
+export type PortState = 'open' | 'closed' | 'filtered';
+
+export interface PortFinding {
+  readonly port: number;
+  readonly service: string;
+  readonly state: PortState;
+  readonly banner: string;
+}
+
+export interface PortScanResult {
+  readonly target: string;
+  readonly resolved_ip: string;
+  readonly scan_duration_ms: number;
+  readonly ports_scanned: number;
+  readonly open_ports: readonly PortFinding[];
+  readonly closed_ports: number;
+  readonly filtered_ports: number;
+  readonly summary: string;
+  readonly risk_level: 'low' | 'medium' | 'high' | 'critical';
+}
+
+export interface PortScanRequest {
+  readonly target: string;
+  readonly ports?: readonly number[];
+  readonly profile?: 'quick' | 'common';
+}
+
+export interface PortScanHistoryItem {
+  readonly id: string;
+  readonly target: string;
+  readonly resolved_ip: string | null;
+  readonly ports_scanned: number;
+  readonly open_ports: readonly PortFinding[];
+  readonly open_port_count: number;
+  readonly scan_duration_ms: number | null;
+  readonly risk_level: 'low' | 'medium' | 'high' | 'critical';
+  readonly status: 'completed' | 'failed';
+  readonly created_at: string;
+}
+
+export interface PortScanHistoryMeta {
+  readonly total: number;
+  readonly page: number;
+  readonly limit: number;
+}
+
+export interface PortScanHistoryResult {
+  readonly scans: readonly PortScanHistoryItem[];
+  readonly meta: PortScanHistoryMeta;
+}
+
+export interface PortScanDetail {
+  readonly id: string;
+  readonly target: string;
+  readonly resolved_ip: string | null;
+  readonly ports_scanned: number;
+  readonly open_ports: readonly PortFinding[];
+  readonly open_port_count: number;
+  readonly closed_port_count: number;
+  readonly filtered_port_count: number;
+  readonly scan_duration_ms: number | null;
+  readonly risk_level: 'low' | 'medium' | 'high' | 'critical';
+  readonly status: 'completed' | 'failed';
+  readonly created_at: string;
+}

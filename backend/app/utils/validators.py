@@ -7,6 +7,8 @@ business logic. Validators are pure and deterministic so they are unit-testable.
 
 import ipaddress
 import re
+import socket
+from urllib.parse import urlsplit
 
 from flask import current_app, request
 
@@ -143,3 +145,370 @@ def validate_password_input(password, max_length: int = 4096) -> str:
     The password is never stored and never logged.
     """
     return validate_string(password, "password", max_length)
+
+
+# --- Port Scanner Validators ------------------------------------------------
+
+# Well-known port to service name mapping (top 100 + common)
+PORT_SERVICE_MAP = {
+    1: "tcpmux",
+    7: "echo",
+    9: "discard",
+    13: "daytime",
+    17: "qotd",
+    19: "chargen",
+    20: "ftp-data",
+    21: "ftp",
+    22: "ssh",
+    23: "telnet",
+    25: "smtp",
+    37: "time",
+    42: "nameserver",
+    43: "whois",
+    53: "dns",
+    67: "dhcp-server",
+    68: "dhcp-client",
+    69: "tftp",
+    79: "finger",
+    80: "http",
+    88: "kerberos",
+    110: "pop3",
+    111: "rpcbind",
+    113: "ident",
+    119: "nntp",
+    123: "ntp",
+    135: "msrpc",
+    137: "netbios-ns",
+    138: "netbios-dgm",
+    139: "netbios-ssn",
+    143: "imap",
+    161: "snmp",
+    162: "snmptrap",
+    179: "bgp",
+    199: "smux",
+    389: "ldap",
+    443: "https",
+    445: "microsoft-ds",
+    465: "smtps",
+    512: "exec",
+    513: "login",
+    514: "shell",
+    515: "printer",
+    543: "klogin",
+    544: "kshell",
+    548: "afp",
+    554: "rtsp",
+    587: "submission",
+    593: "http-rpc-epmap",
+    631: "ipp",
+    636: "ldaps",
+    873: "rsync",
+    902: "vmware-auth",
+    989: "ftps-data",
+    990: "ftps",
+    993: "imaps",
+    995: "pop3s",
+    1024: "reserved",
+    1025: "msrpc",
+    1026: "msrpc",
+    1027: "msrpc",
+    1028: "msrpc",
+    1029: "msrpc",
+    1080: "socks",
+    1194: "openvpn",
+    1433: "ms-sql-s",
+    1434: "ms-sql-m",
+    1521: "oracle",
+    1723: "pptp",
+    2049: "nfs",
+    2082: "cpanel",
+    2083: "cpanel-ssl",
+    2086: "whm",
+    2087: "whm-ssl",
+    2121: "ftp-alt",
+    2222: "ssh-alt",
+    2375: "docker",
+    2376: "docker-ssl",
+    2483: "oracle-db",
+    2484: "oracle-db-ssl",
+    3000: "dev-server",
+    3128: "squid",
+    3306: "mysql",
+    3389: "rdp",
+    3690: "svn",
+    4000: "dev-alt",
+    4443: "https-alt",
+    4567: "sinatra",
+    4786: "smart-install",
+    5000: "dev-server",
+    5060: "sip",
+    5061: "sip-tls",
+    5432: "postgresql",
+    5601: "kibana",
+    5672: "amqp",
+    5900: "vnc",
+    5984: "couchdb",
+    6000: "x11",
+    6379: "redis",
+    6443: "kubernetes",
+    6667: "irc",
+    7000: "dev-alt",
+    7001: "weblogic",
+    8000: "dev-server",
+    8008: "http-alt",
+    8080: "http-proxy",
+    8081: "http-alt",
+    8086: "influxdb",
+    8088: "http-alt",
+    8090: "http-alt",
+    8140: "puppet",
+    8443: "https-alt",
+    8888: "dev-server",
+    9000: "dev-alt",
+    9090: "http-alt",
+    9200: "elasticsearch",
+    9300: "elasticsearch",
+    10000: "webmin",
+    11211: "memcached",
+    15672: "rabbitmq-mgmt",
+    27017: "mongodb",
+    27018: "mongodb",
+    27019: "mongodb",
+}
+
+
+# Quick scan profile: top 20 most common ports
+QUICK_SCAN_PORTS = [
+    21, 22, 23, 25, 53, 80, 110, 111, 135, 139,
+    143, 443, 445, 993, 995, 1723, 3306, 3389, 5432, 8080,
+]
+
+# Common scan profile: top 100 ports (includes quick scan)
+COMMON_SCAN_PORTS = [
+    1, 7, 9, 13, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53, 67, 68, 69, 79, 80,
+    88, 110, 111, 113, 119, 123, 135, 137, 138, 139, 143, 161, 162, 179, 199,
+    389, 443, 445, 465, 512, 513, 514, 515, 543, 544, 548, 554, 587, 593, 631,
+    636, 873, 902, 989, 990, 993, 995, 1080, 1194, 1433, 1434, 1521, 1723,
+    2049, 2082, 2083, 2086, 2087, 2121, 2222, 2375, 2376, 2483, 2484, 3000,
+    3128, 3306, 3389, 3690, 4000, 4443, 4567, 4786, 5000, 5060, 5061, 5432,
+    5601, 5672, 5900, 5984, 6000, 6379, 6443, 6667, 7000, 7001, 8000, 8008,
+    8080, 8081, 8086, 8088, 8090, 8140, 8443, 8888, 9000, 9090, 9200, 9300,
+    10000, 11211, 15672, 27017, 27018, 27019,
+]
+
+# Maximum ports allowed per scan request
+DEFAULT_MAX_PORTS = 100
+
+
+def get_service_name(port: int) -> str:
+    """Return the well-known service name for a port, or 'unknown'."""
+    return PORT_SERVICE_MAP.get(port, "unknown")
+
+
+def validate_port_list(ports, max_ports: int = DEFAULT_MAX_PORTS) -> list[int]:
+    """Validate and normalize a list of port numbers.
+
+    Args:
+        ports: Iterable of port numbers (int) or port strings.
+        max_ports: Maximum number of unique ports allowed.
+
+    Returns:
+        Sorted list of unique valid port numbers.
+
+    Raises:
+        ValidationError: If any port is invalid, out of range, or too many ports.
+    """
+    if ports is None:
+        raise ValidationError("Port list is required", details={"field": "ports"})
+
+    try:
+        iter(ports)
+    except TypeError:
+        raise ValidationError(
+            "'ports' must be a list or array", details={"field": "ports", "type": type(ports).__name__}
+        )
+
+    validated = []
+    seen = set()
+    for p in ports:
+        try:
+            port = int(p)
+        except (ValueError, TypeError):
+            raise ValidationError(
+                f"Invalid port value: {p!r}", details={"field": "ports", "value": p}
+            )
+        if not (1 <= port <= 65535):
+            raise ValidationError(
+                f"Port {port} out of range (1-65535)", details={"field": "ports", "port": port}
+            )
+        if port not in seen:
+            seen.add(port)
+            validated.append(port)
+
+    if len(validated) > max_ports:
+        raise ValidationError(
+            f"Too many ports: {len(validated)} (maximum {max_ports})",
+            details={"field": "ports", "count": len(validated), "max": max_ports},
+        )
+
+    return sorted(validated)
+
+
+def resolve_scan_ports(ports=None, profile=None, max_ports: int = DEFAULT_MAX_PORTS) -> list[int]:
+    """Resolve the final port list from explicit ports and/or profile.
+
+    Args:
+        ports: Explicit list of port numbers.
+        profile: Scan profile name ('quick' or 'common').
+        max_ports: Maximum ports allowed.
+
+    Returns:
+        Sorted list of unique port numbers to scan.
+
+    Raises:
+        ValidationError: If both ports and profile are missing, or profile is invalid.
+    """
+    if ports is not None and profile is not None:
+        raise ValidationError(
+            "Specify either 'ports' or 'profile', not both",
+            details={"field": "ports/profile"},
+        )
+
+    if profile is not None:
+        if profile == "quick":
+            base_ports = QUICK_SCAN_PORTS
+        elif profile == "common":
+            base_ports = COMMON_SCAN_PORTS
+        else:
+            raise ValidationError(
+                f"Invalid profile: {profile}. Use 'quick' or 'common'",
+                details={"field": "profile", "value": profile},
+            )
+        return base_ports[:max_ports]
+
+    if ports is not None:
+        return validate_port_list(ports, max_ports)
+
+    raise ValidationError(
+        "Either 'ports' (list) or 'profile' ('quick'|'common') is required",
+        details={"field": "ports/profile"},
+    )
+
+
+def validate_hostname_or_ip(target: str, max_length: int = 255) -> str:
+    """Validate a hostname or IP address for port scanning.
+
+    Unlike validate_url, this accepts bare hostnames/IPs without a scheme.
+    Returns the normalized target (lowercase hostname, or IP as string).
+
+    Raises:
+        ValidationError: If target is invalid, empty, or too long.
+    """
+    validate_string(target, "target", max_length, min_length=1)
+    target = target.strip().lower()
+
+    # Reject URLs with schemes
+    if "://" in target:
+        raise ValidationError(
+            "Target must be a hostname or IP address (no scheme)",
+            details={"field": "target"},
+        )
+
+    # Reject credentials
+    if "@" in target:
+        raise ValidationError(
+            "Target must not contain credentials", details={"field": "target"}
+        )
+
+    # Split host:port if present (we only want the host part)
+    if ":" in target and not target.startswith("["):
+        # Could be IPv6 in brackets or host:port
+        host_part = target.split(":", 1)[0]
+        # Validate it's not an IPv6 address without brackets
+        try:
+            ipaddress.ip_address(host_part)
+            # It's an IP, but IPv6 needs brackets; reject bare IPv6 with port
+            if target.count(":") > 1:
+                raise ValidationError(
+                    "IPv6 addresses must be enclosed in brackets (e.g., [::1])",
+                    details={"field": "target"},
+                )
+        except ValueError:
+            # It's a hostname with port, take hostname part
+            target = host_part
+    elif target.startswith("[") and "]" in target:
+        # IPv6 in brackets, possibly with port
+        bracket_end = target.index("]")
+        target = target[1:bracket_end]  # Extract IPv6 address
+        try:
+            ipaddress.ip_address(target)
+        except ValueError:
+            raise ValidationError("Invalid IPv6 address", details={"field": "target"})
+
+    # Strip trailing dot from FQDN
+    if target.endswith("."):
+        target = target[:-1]
+
+    # Now target should be a bare hostname or IP
+    # Validate hostname format (RFC 1123)
+    if not _is_valid_hostname(target) and not _is_valid_ip(target):
+        raise ValidationError(
+            "Target must be a valid hostname or IP address",
+            details={"field": "target", "value": target},
+        )
+
+    return target
+
+
+def _is_valid_hostname(hostname: str) -> bool:
+    """Check if string is a valid hostname (RFC 1123)."""
+    if len(hostname) > 253:
+        return False
+    # Allow trailing dot for FQDN
+    if hostname.endswith("."):
+        hostname = hostname[:-1]
+    labels = hostname.split(".")
+    for label in labels:
+        if not label or len(label) > 63:
+            return False
+        if not re.match(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$", label, re.IGNORECASE):
+            return False
+    return True
+
+
+def _is_valid_ip(ip: str) -> bool:
+    """Check if string is a valid IPv4 or IPv6 address."""
+    try:
+        ipaddress.ip_address(ip)
+        return True
+    except ValueError:
+        return False
+
+
+def is_private_hostname(target: str) -> bool:
+    """Return True if the target hostname/IP resolves to a private/reserved address.
+
+    Used to prevent the port scanner from being abused as an SSRF tool.
+    Unlike is_private_host, this accepts bare hostnames/IPs (no URL scheme).
+    """
+    import socket
+
+    # If it's already an IP, check directly
+    try:
+        ip = ipaddress.ip_address(target)
+        return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved
+    except ValueError:
+        pass
+
+    # Resolve hostname
+    try:
+        info = socket.getaddrinfo(target, None)
+    except socket.gaierror:
+        # Unresolvable hostnames are not blocked here; scanner will report unreachable
+        return False
+
+    for addr in info:
+        ip = ipaddress.ip_address(addr[4][0])
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+            return True
+    return False
