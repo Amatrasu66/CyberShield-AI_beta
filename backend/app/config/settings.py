@@ -88,6 +88,17 @@ class Config:
     PORT_SCANNER_BANNER_MAX_BYTES = _env_int("PORT_SCANNER_BANNER_MAX_BYTES", 256)
     PORT_SCANNER_ALLOW_PRIVATE_ADDRESSES = _env_bool("PORT_SCANNER_ALLOW_PRIVATE_ADDRESSES", False)
 
+    # --- IP Reputation / Threat Intel ---------------------------------------
+    IP_REPUTATION_ENABLED = _env_bool("IP_REPUTATION_ENABLED", False)
+    IP_REPUTATION_PROVIDER = os.environ.get("IP_REPUTATION_PROVIDER", "abuseipdb").strip().lower() or "abuseipdb"
+    IP_REPUTATION_API_KEY = os.environ.get("IP_REPUTATION_API_KEY", "").strip()
+    IP_REPUTATION_TIMEOUT = _env_int("IP_REPUTATION_TIMEOUT", 5)
+    IP_REPUTATION_MAX_RESPONSE_BYTES = _env_int("IP_REPUTATION_MAX_RESPONSE_BYTES", 32_768)
+    # AbuseIPDB endpoint is fixed; never allow user-controlled URL
+    IP_REPUTATION_ABUSEIPDB_URL = os.environ.get(
+        "IP_REPUTATION_ABUSEIPDB_URL", "https://api.abuseipdb.com/api/v2/check"
+    ).strip() or "https://api.abuseipdb.com/api/v2/check"
+
     # --- Input limits -----------------------------------------------------
     PASSWORD_MAX_LENGTH = _env_int("PASSWORD_MAX_LENGTH", 4096)
     EMAIL_MAX_LENGTH = _env_int("EMAIL_MAX_LENGTH", 50_000)

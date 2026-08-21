@@ -4,14 +4,18 @@ Port Scanner Routes.
 POST /api/scanner/ports
 GET  /api/scanner/ports/history
 GET  /api/scanner/ports/history/<scan_id>
+GET  /api/scanner/ip-reputation/<ip>
+POST /api/scanner/ip-reputation
 """
 
 from flask import Blueprint, current_app, request
 
 from ..middleware import get_current_user_id, require_auth
 from ..services import PortScannerService
+from ..services.ip_reputation_service import IPReputationService
 from ..utils.helpers import success_response
 from ..utils.validators import require_json
+from ..errors import ValidationError
 
 port_bp = Blueprint("port", __name__)
 
@@ -61,6 +65,7 @@ def scan_ports():
         "filtered_ports": result.filtered_ports,
         "summary": result.summary,
         "risk_level": result.risk_level,
+        "ip_reputation": result.ip_reputation,
     }
 
     return success_response(result_dict, "Port scan completed")
@@ -100,3 +105,60 @@ def get_port_scan_detail(scan_id: str):
     )
 
     return success_response(scan, "Port scan detail retrieved")
+
+
+@port_bp.get("/ip-reputation/<path:ip>")
+@require_auth
+def get_ip_reputation(ip: str):
+    """Retrieve IP reputation for a single IP (authenticated).
+
+    Strict validation; private IPs blocked before external call.
+    Returns normalized result with reputation states:
+    unknown | clean | suspicious | malicious | unavailable
+    """
+    # ip comes from URL path — validate strictly as IP
+    from ..utils.validators import validate_ip_address, is_private_ip
+
+    # Flask decodes URL; strip
+    ip = (ip or "").strip()
+    normalized = validate_ip_address(ip)
+    if is_private_ip(normalized):
+        raise ValidationError(
+            "Private or reserved IP addresses cannot be checked for reputation",
+            details={"field": "ip"},
+        )
+
+    result = IPReputationService.check_ip(normalized)
+    return success_response(result.to_dict(), "IP reputation check completed")
+
+
+@port_bp.post("/ip-reputation")
+@require_auth
+def post_ip_reputation():
+    """Check reputation for IP or hostname via POST body.
+
+    Accepts either {"ip": "1.2.3.4"} or {"target": "example.com"}.
+    Never accepts user_id from client; uses JWT for auth only.
+    """
+    data = require_json()
+    ip = data.get("ip")
+    target = data.get("target")
+
+    if ip and target:
+        raise ValidationError("Provide either 'ip' or 'target', not both", details={"field": "ip/target"})
+    if ip:
+        from ..utils.validators import validate_ip_address, is_private_ip
+        normalized = validate_ip_address(str(ip))
+        if is_private_ip(normalized):
+            raise ValidationError(
+                "Private or reserved IP addresses cannot be checked for reputation",
+                details={"field": "ip"},
+            )
+        result = IPReputationService.check_ip(normalized)
+        return success_response(result.to_dict(), "IP reputation check completed")
+    if target:
+        # Delegates hostname resolution and private blocking to service
+        result = IPReputationService.check_target(str(target))
+        return success_response(result.to_dict(), "IP reputation check completed")
+
+    raise ValidationError("Provide 'ip' or 'target' in request body", details={"field": "ip/target"})

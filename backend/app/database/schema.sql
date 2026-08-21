@@ -117,8 +117,20 @@ CREATE TABLE IF NOT EXISTS port_scans (
     scan_duration_ms INT,
     risk_level TEXT CHECK (risk_level IN ('low', 'medium', 'high', 'critical')),
     status TEXT CHECK (status IN ('completed', 'failed')) NOT NULL DEFAULT 'completed',
+    ip_reputation JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Backfill for existing databases that already have port_scans without ip_reputation
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'port_scans' AND column_name = 'ip_reputation'
+    ) THEN
+        ALTER TABLE port_scans ADD COLUMN ip_reputation JSONB;
+    END IF;
+END $$;
 
 -- ============================================================================
 -- Reports

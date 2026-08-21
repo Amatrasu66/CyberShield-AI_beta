@@ -64,14 +64,21 @@ class _FakeSupabaseTable:
         self._filters = []
         self._order = None
         self._limit = None
+        self._range = None
+        self._count = None
 
     def insert(self, payload):
         self._mode = "insert"
         self._payload = payload
         return self
 
-    def select(self, columns="*"):
+    def select(self, columns="*", count=None, **kwargs):
         self._mode = "select"
+        # ``count`` is accepted for ``select(..., count="exact")`` callers.
+        if count is not None:
+            self._count = count
+        elif "count" in kwargs:
+            self._count = kwargs["count"]
         return self
 
     def eq(self, column, value):
@@ -86,6 +93,10 @@ class _FakeSupabaseTable:
         self._limit = limit
         return self
 
+    def range(self, start, end):
+        self._range = (start, end)
+        return self
+
     def execute(self):
         if self._client.fail_next_execute:
             raise ConnectionError("database unavailable")
@@ -96,17 +107,30 @@ class _FakeSupabaseTable:
             # Make inserted rows queryable, mirroring the live database.
             row = dict(self._payload)
             row.setdefault("id", str(uuid.uuid4()))
+            # Ensure default timestamps for history ordering
+            if self._name == "port_scans" and "created_at" not in row:
+                from datetime import datetime, timezone as _tz
+                row["created_at"] = datetime.now(_tz.utc).isoformat()
             self._client.rows.setdefault(self._name, []).append(row)
             return {"data": [row]}
-        rows = self._client.rows.get(self._name, [])
+        rows = list(self._client.rows.get(self._name, []))
         for column, value in self._filters:
             rows = [r for r in rows if r.get(column) == value]
+        # Preserve total before pagination for count="exact"
+        total_count = len(rows)
         if self._order:
             column, desc = self._order
             rows = sorted(rows, key=lambda r: r.get(column) or "", reverse=bool(desc))
-        if self._limit is not None:
+        if self._range is not None:
+            start, end = self._range
+            # PostgREST range is inclusive, so slice end+1
+            rows = rows[start : end + 1]
+        elif self._limit is not None:
             rows = rows[: self._limit]
-        return {"data": rows}
+        result = {"data": rows}
+        if self._count == "exact":
+            result["count"] = total_count
+        return result
 
 
 @pytest.fixture(autouse=True)

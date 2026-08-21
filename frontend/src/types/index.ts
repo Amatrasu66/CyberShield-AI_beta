@@ -328,6 +328,25 @@ export interface PortFinding {
   readonly banner: string;
 }
 
+export type IPReputationState = 'unknown' | 'clean' | 'suspicious' | 'malicious' | 'unavailable';
+
+export interface IPReputationResult {
+  readonly ip: string;
+  readonly reputation: IPReputationState;
+  readonly confidence: string | null;
+  readonly malicious: boolean;
+  readonly suspicious: boolean;
+  readonly reports: number;
+  readonly country: string | null;
+  readonly asn: number | null;
+  readonly organization: string | null;
+  readonly isp: string | null;
+  readonly last_reported_at: string | null;
+  readonly provider: string;
+  readonly checked_at: string;
+  readonly reason?: string | null;
+}
+
 export interface PortScanResult {
   readonly target: string;
   readonly resolved_ip: string;
@@ -338,6 +357,7 @@ export interface PortScanResult {
   readonly filtered_ports: number;
   readonly summary: string;
   readonly risk_level: 'low' | 'medium' | 'high' | 'critical';
+  readonly ip_reputation?: IPReputationResult | null;
 }
 
 export interface PortScanRequest {
@@ -357,6 +377,7 @@ export interface PortScanHistoryItem {
   readonly risk_level: 'low' | 'medium' | 'high' | 'critical';
   readonly status: 'completed' | 'failed';
   readonly created_at: string;
+  readonly ip_reputation?: IPReputationResult | null;
 }
 
 export interface PortScanHistoryMeta {
@@ -383,4 +404,5 @@ export interface PortScanDetail {
   readonly risk_level: 'low' | 'medium' | 'high' | 'critical';
   readonly status: 'completed' | 'failed';
   readonly created_at: string;
+  readonly ip_reputation?: IPReputationResult | null;
 }

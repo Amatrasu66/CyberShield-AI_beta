@@ -496,7 +496,7 @@ def is_private_hostname(target: str) -> bool:
     # If it's already an IP, check directly
     try:
         ip = ipaddress.ip_address(target)
-        return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved
+        return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified
     except ValueError:
         pass
 
@@ -508,7 +508,46 @@ def is_private_hostname(target: str) -> bool:
         return False
 
     for addr in info:
-        ip = ipaddress.ip_address(addr[4][0])
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+        try:
+            ip = ipaddress.ip_address(addr[4][0])
+        except ValueError:
+            continue
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified:
             return True
     return False
+
+
+# --- IP Reputation Validators ------------------------------------------------
+
+def validate_ip_address(ip: str, max_length: int = 45) -> str:
+    """Validate a single IP address (v4 or v6) strictly.
+
+    Returns normalized string form. Raises ValidationError otherwise.
+    """
+    validate_string(ip, "ip", max_length, min_length=1)
+    ip = ip.strip()
+    # Strip brackets if present (e.g. [::1])
+    if ip.startswith("[") and ip.endswith("]"):
+        ip = ip[1:-1]
+    try:
+        parsed = ipaddress.ip_address(ip)
+    except ValueError:
+        raise ValidationError("Invalid IP address", details={"field": "ip", "value": ip})
+    return str(parsed)
+
+
+def is_private_ip(ip: str) -> bool:
+    """Return True if IP is private/loopback/link-local/reserved/multicast/unspecified."""
+    try:
+        parsed = ipaddress.ip_address(ip.strip())
+    except ValueError:
+        # Non-IP considered not private here; caller should validate separately
+        return False
+    return (
+        parsed.is_private
+        or parsed.is_loopback
+        or parsed.is_link_local
+        or parsed.is_reserved
+        or parsed.is_multicast
+        or parsed.is_unspecified
+    )

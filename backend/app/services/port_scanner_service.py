@@ -67,6 +67,7 @@ class ScanResult:
     filtered_ports: int
     summary: str
     risk_level: str  # "low" | "medium" | "high" | "critical"
+    ip_reputation: Optional[dict] = None
 
 
 class PortScannerService:
@@ -141,6 +142,66 @@ class PortScannerService:
             summary_parts.append(f"{filtered_count} filtered")
         summary = f"Scanned {len(port_list)} ports: {', '.join(summary_parts) or 'none'}"
 
+        # IP reputation lookup (non-blocking for scan success)
+        ip_reputation: Optional[dict] = None
+        try:
+            # Only attempt for plausible public IPs; private/reserved will be handled as unavailable
+            # and never sent to external provider
+            if resolved_ip:
+                try:
+                    import ipaddress as _ipaddr
+                    _parsed = _ipaddr.ip_address(resolved_ip)
+                    is_ip = True
+                except ValueError:
+                    is_ip = False
+                if is_ip:
+                    try:
+                        from .ip_reputation_service import IPReputationService
+                        rep = IPReputationService.check_ip(resolved_ip)
+                        ip_reputation = rep.to_dict()
+                    except ValidationError as ve:
+                        # Private IP blocked → normalized unavailable, not a scan failure
+                        ip_reputation = {
+                            "ip": resolved_ip,
+                            "reputation": "unavailable",
+                            "confidence": "none",
+                            "malicious": False,
+                            "suspicious": False,
+                            "reports": 0,
+                            "provider": "unavailable",
+                            "checked_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
+                            "reason": "private_ip_blocked",
+                        }
+                    except Exception:
+                        # Any provider failure → unavailable but scan succeeds
+                        ip_reputation = {
+                            "ip": resolved_ip,
+                            "reputation": "unavailable",
+                            "confidence": "none",
+                            "malicious": False,
+                            "suspicious": False,
+                            "reports": 0,
+                            "provider": "unavailable",
+                            "checked_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
+                            "reason": "provider_error",
+                        }
+                else:
+                    # Resolved value is not an IP (resolution failure) → unavailable
+                    ip_reputation = {
+                        "ip": resolved_ip,
+                        "reputation": "unavailable",
+                        "confidence": "none",
+                        "malicious": False,
+                        "suspicious": False,
+                        "reports": 0,
+                        "provider": "unavailable",
+                        "checked_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
+                        "reason": "unresolvable",
+                    }
+        except Exception:
+            # Never let reputation break the scan
+            pass
+
         result = ScanResult(
             target=target,
             resolved_ip=resolved_ip,
@@ -151,6 +212,7 @@ class PortScannerService:
             filtered_ports=filtered_count,
             summary=summary,
             risk_level=risk_level,
+            ip_reputation=ip_reputation,
         )
 
         # Persist completed scan for authenticated user
@@ -361,6 +423,7 @@ class PortScannerService:
             "scan_duration_ms": result.scan_duration_ms,
             "risk_level": result.risk_level,
             "status": "completed",
+            "ip_reputation": result.ip_reputation,
         }
 
         try:
@@ -413,14 +476,23 @@ class PortScannerService:
                 .eq("user_id", user_id)
                 .execute()
             )
-            total = getattr(count_result, "count", None) or 0
+            # Supabase python returns count as attribute or dict key depending on version/fake
+            if isinstance(count_result, dict):
+                total = count_result.get("count", 0) or 0
+            else:
+                total = getattr(count_result, "count", None) or 0
+            # Some clients return count inside data length fallback
+            if not total and isinstance(count_result, dict) and "data" in count_result:
+                # When count not returned separately, derive from data length is wrong for pagination,
+                # so rely on 0 only if truly missing. Real Supabase always returns count.
+                pass
 
             # Get paginated results (newest first)
             result = (
                 client.table("port_scans")
                 .select(
                     "id, target, resolved_ip, ports_scanned, open_ports, "
-                    "scan_duration_ms, risk_level, status, created_at"
+                    "scan_duration_ms, risk_level, status, ip_reputation, created_at"
                 )
                 .eq("user_id", user_id)
                 .order("created_at", desc=True)
