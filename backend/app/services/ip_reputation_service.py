@@ -244,25 +244,24 @@ class IPReputationService:
 
     @staticmethod
     def _get_provider() -> IPReputationProvider:
-        # Prefer Flask app config when inside request context (tests set app.config)
+        # Prefer Flask app config when available (request or app context)
         try:
-            from flask import has_request_context, current_app
-            if has_request_context():
-                enabled = current_app.config.get("IP_REPUTATION_ENABLED")
-                # has_request_context true but not testing fallback? Use app config
-                # enabled may be None if not set -> fallback to get_config
-                if enabled is not None:
-                    if not enabled:
-                        return NullProvider()
-                    provider_name = (current_app.config.get("IP_REPUTATION_PROVIDER", "abuseipdb") or "abuseipdb").strip().lower()
-                    if provider_name == "abuseipdb":
-                        return AbuseIPDBProvider(
-                            api_key=current_app.config.get("IP_REPUTATION_API_KEY", ""),
-                            timeout=int(current_app.config.get("IP_REPUTATION_TIMEOUT", 5) or 5),
-                            max_bytes=int(current_app.config.get("IP_REPUTATION_MAX_RESPONSE_BYTES", 32768) or 32768),
-                            base_url=current_app.config.get("IP_REPUTATION_ABUSEIPDB_URL", "https://api.abuseipdb.com/api/v2/check"),
-                        )
+            from flask import current_app
+            enabled = current_app.config.get("IP_REPUTATION_ENABLED")
+            if enabled is not None:
+                if not enabled:
                     return NullProvider()
+                provider_name = (current_app.config.get("IP_REPUTATION_PROVIDER", "abuseipdb") or "abuseipdb").strip().lower()
+                if provider_name == "abuseipdb":
+                    return AbuseIPDBProvider(
+                        api_key=current_app.config.get("IP_REPUTATION_API_KEY", ""),
+                        timeout=int(current_app.config.get("IP_REPUTATION_TIMEOUT", 5) or 5),
+                        max_bytes=int(current_app.config.get("IP_REPUTATION_MAX_RESPONSE_BYTES", 32768) or 32768),
+                        base_url=current_app.config.get("IP_REPUTATION_ABUSEIPDB_URL", "https://api.abuseipdb.com/api/v2/check"),
+                    )
+                return NullProvider()
+        except RuntimeError:
+            pass
         except Exception:
             pass
         cfg = get_config()
@@ -281,7 +280,14 @@ class IPReputationService:
 
     @staticmethod
     def check_ip(ip: str) -> ReputationResult:
-        """Validate and check a single IP address."""
+        """Validate and check a single IP address.
+
+        Cache flow (after validation, private block):
+          - if caching disabled → provider direct
+          - else lookup (ip, provider) → if fresh return cached
+          - else call provider → if not unavailable, upsert cache
+        Private IPs never reach provider or cache.
+        """
         from ..utils.validators import validate_ip_address, is_private_ip
         # Strict validation
         normalized = validate_ip_address(ip)
@@ -291,7 +297,25 @@ class IPReputationService:
                 details={"field": "ip"},
             )
         provider = IPReputationService._get_provider()
-        return provider.check_ip(normalized)
+        # NullProvider means disabled/unknown → no cache
+        if provider.provider_name == "unavailable":
+            return provider.check_ip(normalized)
+        # Attempt cache lookup (handles enabled check internally)
+        try:
+            from .ip_reputation_cache_service import IPReputationCacheService
+            cached = IPReputationCacheService.get(normalized, provider.provider_name)
+            if cached is not None:
+                return cached
+        except Exception:
+            # Cache must never break provider flow
+            pass
+        result = provider.check_ip(normalized)
+        try:
+            from .ip_reputation_cache_service import IPReputationCacheService
+            IPReputationCacheService.put(result)
+        except Exception:
+            pass
+        return result
 
     @staticmethod
     def check_target(target: str) -> ReputationResult:
@@ -301,28 +325,25 @@ class IPReputationService:
         """
         from ..utils.validators import validate_hostname_or_ip, is_private_hostname
 
-        # Resolve config from Flask if available
+        # Resolve config and validate target — prefer Flask current_app if available
         try:
-            from flask import has_request_context, current_app
-            if has_request_context():
-                max_len = current_app.config.get("URL_MAX_LENGTH", 2048)
-                enabled = current_app.config.get("IP_REPUTATION_ENABLED")
-                if enabled is False:
-                    # Use normalized target for ip field but still validate
-                    from ..config import get_config as __cfg
-                    cfg_fallback = __cfg()
-                    normalized_target = validate_hostname_or_ip(target, max_length=max_len)
-                    return ReputationResult(ip=normalized_target, reputation="unavailable", confidence="none", provider="unavailable", checked_at=_now_iso(), reason="provider_disabled")
-                # proceed with Flask config max_len
+            from flask import current_app
+            max_len = current_app.config.get("URL_MAX_LENGTH", 2048)
+            enabled = current_app.config.get("IP_REPUTATION_ENABLED")
+            if enabled is None:
+                from ..config import get_config as _gc
+                enabled = _gc().IP_REPUTATION_ENABLED
+            if not enabled:
                 normalized_target = validate_hostname_or_ip(target, max_length=max_len)
-            else:
-                from ..config import get_config as _get_cfg
-                cfg = _get_cfg()
-                normalized_target = validate_hostname_or_ip(target, max_length=cfg.URL_MAX_LENGTH)
-                if not cfg.IP_REPUTATION_ENABLED:
-                    return ReputationResult(ip=normalized_target, reputation="unavailable", confidence="none", provider="unavailable", checked_at=_now_iso(), reason="provider_disabled")
-        except Exception as exc:
-            # Fallback to global config if Flask not available
+                return ReputationResult(ip=normalized_target, reputation="unavailable", confidence="none", provider="unavailable", checked_at=_now_iso(), reason="provider_disabled")
+            normalized_target = validate_hostname_or_ip(target, max_length=max_len)
+        except RuntimeError:
+            from ..config import get_config as _get_cfg
+            cfg = _get_cfg()
+            normalized_target = validate_hostname_or_ip(target, max_length=cfg.URL_MAX_LENGTH)
+            if not cfg.IP_REPUTATION_ENABLED:
+                return ReputationResult(ip=normalized_target, reputation="unavailable", confidence="none", provider="unavailable", checked_at=_now_iso(), reason="provider_disabled")
+        except Exception:
             from ..config import get_config as _get_cfg
             cfg = _get_cfg()
             normalized_target = validate_hostname_or_ip(target, max_length=cfg.URL_MAX_LENGTH)

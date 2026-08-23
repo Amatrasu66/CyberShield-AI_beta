@@ -98,6 +98,9 @@ class Config:
     IP_REPUTATION_ABUSEIPDB_URL = os.environ.get(
         "IP_REPUTATION_ABUSEIPDB_URL", "https://api.abuseipdb.com/api/v2/check"
     ).strip() or "https://api.abuseipdb.com/api/v2/check"
+    # Bounded cache — shared, not per-user; TTL 24h default
+    IP_REPUTATION_CACHE_ENABLED = _env_bool("IP_REPUTATION_CACHE_ENABLED", True)
+    IP_REPUTATION_CACHE_TTL = _env_int("IP_REPUTATION_CACHE_TTL", 86400)
 
     # --- Input limits -----------------------------------------------------
     PASSWORD_MAX_LENGTH = _env_int("PASSWORD_MAX_LENGTH", 4096)

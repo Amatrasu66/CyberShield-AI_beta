@@ -66,10 +66,24 @@ class _FakeSupabaseTable:
         self._limit = None
         self._range = None
         self._count = None
+        self._on_conflict = None
+        self._update_payload = None
 
     def insert(self, payload):
         self._mode = "insert"
         self._payload = payload
+        return self
+
+    def upsert(self, payload, on_conflict=None, **kwargs):
+        self._mode = "upsert"
+        self._payload = payload
+        # Supabase upsert may be called with on_conflict="ip,provider"
+        self._on_conflict = on_conflict or kwargs.get("on_conflict")
+        return self
+
+    def update(self, payload):
+        self._mode = "update"
+        self._update_payload = payload
         return self
 
     def select(self, columns="*", count=None, **kwargs):
@@ -111,8 +125,63 @@ class _FakeSupabaseTable:
             if self._name == "port_scans" and "created_at" not in row:
                 from datetime import datetime, timezone as _tz
                 row["created_at"] = datetime.now(_tz.utc).isoformat()
+            if self._name == "ip_reputation_cache" and "created_at" not in row:
+                from datetime import datetime, timezone as _tz
+                now = datetime.now(_tz.utc).isoformat()
+                row.setdefault("created_at", now)
+                row.setdefault("updated_at", now)
             self._client.rows.setdefault(self._name, []).append(row)
             return {"data": [row]}
+        if self._mode == "upsert":
+            if self._client.fail_inserts:
+                raise ConnectionError("database unavailable")
+            # Handle unique (ip, provider) for ip_reputation_cache
+            rows = self._client.rows.setdefault(self._name, [])
+            # Determine conflict keys
+            conflict_keys = []
+            if self._on_conflict:
+                conflict_keys = [k.strip() for k in str(self._on_conflict).split(",")]
+            else:
+                # Default unique for cache
+                if self._name == "ip_reputation_cache":
+                    conflict_keys = ["ip", "provider"]
+            # Find existing
+            existing = None
+            for r in rows:
+                if conflict_keys and all(r.get(k) == self._payload.get(k) for k in conflict_keys):
+                    existing = r
+                    break
+            if existing is not None:
+                # Update existing in place
+                existing.update(self._payload)
+                # Ensure updated_at
+                from datetime import datetime, timezone as _tz
+                existing["updated_at"] = datetime.now(_tz.utc).isoformat()
+                self._client.inserts.setdefault(self._name, []).append(self._payload)
+                return {"data": [existing]}
+            # Insert new
+            row = dict(self._payload)
+            row.setdefault("id", str(uuid.uuid4()))
+            if self._name == "ip_reputation_cache":
+                from datetime import datetime, timezone as _tz
+                now = datetime.now(_tz.utc).isoformat()
+                row.setdefault("created_at", now)
+                row.setdefault("updated_at", now)
+            rows.append(row)
+            self._client.inserts.setdefault(self._name, []).append(self._payload)
+            return {"data": [row]}
+        if self._mode == "update":
+            if self._client.fail_inserts:
+                raise ConnectionError("database unavailable")
+            rows = self._client.rows.get(self._name, [])
+            matched = []
+            for r in rows:
+                if all(r.get(col) == val for col, val in self._filters):
+                    r.update(self._update_payload or {})
+                    from datetime import datetime, timezone as _tz
+                    r["updated_at"] = datetime.now(_tz.utc).isoformat()
+                    matched.append(r)
+            return {"data": matched}
         rows = list(self._client.rows.get(self._name, []))
         for column, value in self._filters:
             rows = [r for r in rows if r.get(column) == value]
@@ -148,6 +217,10 @@ def fake_supabase(monkeypatch):
         client.track_auth(access_token)
         return client
 
+    # Shared fake for admin/anon as well (cache uses admin)
+    def _admin():
+        return client
+
     for module in (
         "app.services.auth_service",
         "app.services.scanner_service",
@@ -157,8 +230,28 @@ def fake_supabase(monkeypatch):
         "app.services.report_service",
         "app.services.dashboard_service",
         "app.services.port_scanner_service",
+        "app.services.ip_reputation_service",
+        "app.services.ip_reputation_cache_service",
     ):
-        monkeypatch.setattr(module + ".get_user_supabase_client", _scoped)
+        try:
+            monkeypatch.setattr(module + ".get_user_supabase_client", _scoped)
+        except Exception:
+            pass
+        try:
+            monkeypatch.setattr(module + ".get_supabase_admin_client", _admin)
+        except Exception:
+            pass
+        try:
+            monkeypatch.setattr(module + ".get_supabase_client", _admin)
+        except Exception:
+            pass
+    # Also patch database layer directly
+    try:
+        monkeypatch.setattr("app.database.supabase_client.get_user_supabase_client", _scoped)
+        monkeypatch.setattr("app.database.supabase_client.get_supabase_admin_client", _admin)
+        monkeypatch.setattr("app.database.supabase_client.get_supabase_client", _admin)
+    except Exception:
+        pass
     return client
 
 
@@ -190,6 +283,12 @@ class TestingConfig(Config):
     EMAIL_MAX_LENGTH = 1000
     LOG_MAX_LENGTH = 2000
     CRYPTO_MAX_INPUT_LENGTH = 500
+    IP_REPUTATION_ENABLED = False
+    IP_REPUTATION_CACHE_ENABLED = False
+    IP_REPUTATION_CACHE_TTL = 86400
+    IP_REPUTATION_PROVIDER = "abuseipdb"
+    IP_REPUTATION_API_KEY = "test-api-key"
+    IP_REPUTATION_TIMEOUT = 5
 
 
 @pytest.fixture()

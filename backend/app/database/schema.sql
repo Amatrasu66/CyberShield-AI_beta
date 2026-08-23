@@ -133,6 +133,41 @@ BEGIN
 END $$;
 
 -- ============================================================================
+-- IP Reputation Cache (shared, not per-user)
+-- Shared provider data; no user_id, no API keys, no tokens.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS ip_reputation_cache (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    ip TEXT NOT NULL,
+    reputation TEXT NOT NULL CHECK (reputation IN ('unknown','clean','suspicious','malicious','unavailable')),
+    confidence TEXT NOT NULL CHECK (confidence IN ('none','low','medium','high','very_high')),
+    malicious BOOLEAN NOT NULL DEFAULT FALSE,
+    suspicious BOOLEAN NOT NULL DEFAULT FALSE,
+    reports INT NOT NULL DEFAULT 0,
+    country TEXT,
+    asn TEXT,
+    organization TEXT,
+    isp TEXT,
+    last_reported_at TIMESTAMPTZ,
+    provider TEXT NOT NULL,
+    checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT ip_reputation_cache_ip_provider_unique UNIQUE (ip, provider)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ip_reputation_cache_ip_provider
+    ON ip_reputation_cache (ip, provider);
+CREATE INDEX IF NOT EXISTS idx_ip_reputation_cache_expires_at
+    ON ip_reputation_cache (expires_at);
+
+-- Shared cache: enable RLS but allow only service_role to bypass.
+-- No policies for anon/authenticated → frontend cannot read/write directly.
+-- Backend uses service_role (get_supabase_admin_client) which bypasses RLS.
+ALTER TABLE ip_reputation_cache ENABLE ROW LEVEL SECURITY;
+
+-- ============================================================================
 -- Reports
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS reports (
