@@ -248,6 +248,22 @@ export interface ReportLogScanData {
   readonly anomalies: readonly unknown[];
 }
 
+export interface ReportPortScanData {
+  readonly target: string | null;
+  readonly resolved_ip: string | null;
+  readonly scan_duration_ms: number | null;
+  readonly ports_scanned: number | null;
+  readonly open_ports: readonly unknown[];
+  readonly open_port_count: number | null;
+  readonly closed_ports: number | null;
+  readonly filtered_ports: number | null;
+  readonly risk_level: string | null;
+  readonly status: string | null;
+  readonly created_at: string | null;
+  readonly ip_reputation: IPReputationResult | null;
+  readonly summary: string | null;
+}
+
 export interface ReportData {
   readonly id: string;
   readonly title: string;
@@ -257,6 +273,7 @@ export interface ReportData {
   readonly email_scan: ReportEmailScanData | null;
   readonly password_scan: ReportPasswordScanData | null;
   readonly log_scan: ReportLogScanData | null;
+  readonly port_scan: ReportPortScanData | null;
   readonly summary: string | null;
   readonly findings?: readonly unknown[];
 }

@@ -44,6 +44,7 @@ SCAN_TABLES = (
     "email_scans",
     "password_scans",
     "log_scans",
+    "port_scans",
 )
 
 DEFAULT_TITLE = "Security Audit Report"
@@ -120,6 +121,7 @@ def _build_summary(latest: dict) -> str:
         ("email_scans", "email"),
         ("password_scans", "password"),
         ("log_scans", "log"),
+        ("port_scans", "port scan"),
     ):
         if latest.get(table):
             categories.append(label)
@@ -142,6 +144,7 @@ def _build_report_data(latest: dict, title: str, report_id: str, generated_at: s
         "email_scan": _map_email_scan(latest.get("email_scans")),
         "password_scan": _map_password_scan(latest.get("password_scans")),
         "log_scan": _map_log_scan(latest.get("log_scans")),
+        "port_scan": _map_port_scan(latest.get("port_scans")),
         "summary": _build_summary(latest),
     }
     summary = config.get("summary")
@@ -223,6 +226,68 @@ def _map_log_scan(row):
         "risk_level": row.get("risk_level"),
         "analyzer": row.get("model_version"),
         "anomalies": row.get("findings") or [],
+    }
+
+
+def _sanitize_banner(banner: str) -> str:
+    """Sanitize banner for safe PDF embedding: strip control chars, truncate."""
+    if not isinstance(banner, str):
+        return ""
+    # Remove control chars except tab/newline, keep printable
+    cleaned = "".join(c for c in banner if c.isprintable() or c in "\n\t\r")
+    # Truncate to 256 chars as per scanner limits
+    if len(cleaned) > 256:
+        cleaned = cleaned[:256] + "..."
+    return cleaned
+
+
+def _map_port_scan(row):
+    if not row:
+        return None
+    open_ports = row.get("open_ports") or []
+    # Sanitize banners for report snapshot
+    sanitized_ports = []
+    for p in open_ports:
+        if not isinstance(p, dict):
+            continue
+        banner = _sanitize_banner(str(p.get("banner") or ""))
+        sanitized_ports.append({
+            "port": p.get("port"),
+            "service": p.get("service") or "unknown",
+            "state": p.get("state") or "unknown",
+            "banner": banner,
+        })
+    open_count = sum(1 for p in sanitized_ports if p.get("state") == "open")
+    closed_count = sum(1 for p in sanitized_ports if p.get("state") == "closed")
+    filtered_count = sum(1 for p in sanitized_ports if p.get("state") == "filtered")
+    # ip_reputation may be None for old scans
+    ip_rep = row.get("ip_reputation")
+    # Ensure no API key leakage and normalize; drop any key-like fields if present
+    normalized_rep = None
+    if isinstance(ip_rep, dict):
+        allowed = {
+            "ip", "reputation", "confidence", "malicious", "suspicious",
+            "reports", "country", "asn", "organization", "isp",
+            "last_reported_at", "provider", "checked_at", "reason",
+        }
+        normalized_rep = {k: v for k, v in ip_rep.items() if k in allowed}
+        # Ensure ip is present
+        if not normalized_rep.get("ip"):
+            normalized_rep["ip"] = row.get("resolved_ip")
+    return {
+        "target": row.get("target"),
+        "resolved_ip": row.get("resolved_ip"),
+        "scan_duration_ms": row.get("scan_duration_ms"),
+        "ports_scanned": row.get("ports_scanned"),
+        "open_ports": sanitized_ports,
+        "open_port_count": open_count,
+        "closed_ports": closed_count,
+        "filtered_ports": filtered_count,
+        "risk_level": row.get("risk_level"),
+        "status": row.get("status"),
+        "created_at": row.get("created_at"),
+        "ip_reputation": normalized_rep,
+        "summary": f"Scanned {row.get('ports_scanned')} ports: {open_count} open, {closed_count} closed, {filtered_count} filtered.",
     }
 
 

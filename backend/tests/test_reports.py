@@ -512,7 +512,8 @@ class TestPDFReportGenerator:
             "3. Email Security Scan",
             "4. Password Strength Analysis",
             "5. Log Analysis",
-            "6. Risk & Findings Summary",
+            "6. Port Scanner and IP Reputation",
+            "7. Risk & Findings Summary",
             "CYBERSHIELD AI",
         ):
             assert heading in raw.decode("latin-1")

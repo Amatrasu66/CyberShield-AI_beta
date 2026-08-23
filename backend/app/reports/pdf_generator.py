@@ -82,6 +82,7 @@ WEBSITE_KEYS = ("website_scan", "website_scans", "website")
 EMAIL_KEYS = ("email_scan", "email_scans", "email")
 PASSWORD_KEYS = ("password_scan", "password_scans", "password")
 LOG_KEYS = ("log_scan", "log_scans", "log_analysis", "logs")
+PORT_KEYS = ("port_scan", "port_scans", "port", "port_scanner")
 FINDINGS_KEYS = ("findings", "risk_findings", "risks")
 SUMMARY_KEYS = ("summary", "overall_summary", "security_summary", "executive_summary")
 
@@ -275,6 +276,7 @@ class PDFReportGenerator:
         story += cls._email_section(data)
         story += cls._password_section(data)
         story += cls._log_section(data)
+        story += cls._port_section(data)
         story += cls._findings_section(data)
         return story
 
@@ -441,8 +443,77 @@ class PDFReportGenerator:
         return story
 
     @classmethod
+    def _port_section(cls, data):
+        story = cls._heading("6. Port Scanner and IP Reputation")
+        items = _as_list(_first(data, *PORT_KEYS))
+        # Filter out None entries; _as_list returns [] for None due to _first returning None then _as_list -> []
+        # But if port_scan is a single dict, wrap; if already list with one dict, ok
+        # Remove empty None
+        items = [x for x in items if x is not None]
+        if not items:
+            story.append(Paragraph("No port scan data was included in this report.", STYLE_NOTE))
+            return story
+
+        for scan in items:
+            if not isinstance(scan, dict):
+                story.append(Paragraph(_esc(scan), STYLE_BODY))
+                continue
+            # Port scan core
+            story.append(Paragraph("Port Scan — Target & Results", STYLE_H2))
+            if scan.get("summary"):
+                story.append(Paragraph(_esc(scan.get("summary")), STYLE_BODY))
+            story.append(cls._kv_table([
+                ("Target", _first(scan, "target", default="—")),
+                ("Resolved IP", _first(scan, "resolved_ip", default="—")),
+                ("Scan Date", _fmt_date(_first(scan, "created_at", "scan_date")) or "—"),
+                ("Scan Duration", _fmt_ms(_first(scan, "scan_duration_ms"))),
+                ("Ports Scanned", _first(scan, "ports_scanned", default="—")),
+                ("Open Ports", _first(scan, "open_port_count", default="—")),
+                ("Closed Ports", _first(scan, "closed_ports", default="—")),
+                ("Filtered Ports", _first(scan, "filtered_ports", default="—")),
+                ("Port Risk Level", _first(scan, "risk_level", default="—")),
+                ("Status", _first(scan, "status", default="—")),
+            ]))
+            # Distinct: PORT RISK vs IP REPUTATION — already separated by subheadings
+            ports = scan.get("open_ports") or scan.get("ports") or []
+            if ports:
+                story.append(Paragraph("Discovered Ports (service / state / banner)", STYLE_H2))
+                story.append(cls._port_table(ports))
+            else:
+                story.append(Paragraph("No port details were recorded for this scan.", STYLE_NOTE))
+
+            # IP Reputation subsection — clearly distinguished
+            story.append(Paragraph("IP Reputation — AbuseIPDB (independent from port risk)", STYLE_H2))
+            rep = scan.get("ip_reputation") or scan.get("reputation")
+            if not isinstance(rep, dict) or not rep:
+                story.append(Paragraph("Not available — this scan was created before IP reputation was enabled or the provider returned no data.", STYLE_NOTE))
+            else:
+                # Sanitize/no API key exposure — only allowed fields already filtered in service
+                story.append(cls._kv_table([
+                    ("IP Address", _first(rep, "ip", default="—")),
+                    ("Reputation", _first(rep, "reputation", default="—")),
+                    ("Confidence", _first(rep, "confidence", default="—")),
+                    ("Malicious", "Yes" if rep.get("malicious") else "No"),
+                    ("Suspicious", "Yes" if rep.get("suspicious") else "No"),
+                    ("Abuse Reports", _first(rep, "reports", default="—")),
+                    ("Country", _first(rep, "country", default="—")),
+                    ("ASN", _first(rep, "asn", default="—")),
+                    ("Organization", _first(rep, "organization", default="—")),
+                    ("ISP", _first(rep, "isp", default="—")),
+                    ("Last Reported", _fmt_date(_first(rep, "last_reported_at")) or "—"),
+                    ("Provider", _first(rep, "provider", default="—")),
+                    ("Checked At", _fmt_date(_first(rep, "checked_at")) or "—"),
+                ]))
+                # Note distinction
+                story.append(Paragraph(
+                    "Note: Port risk is derived from open ports/services; IP reputation is an independent AbuseIPDB signal. No combined score is computed in this report.",
+                    STYLE_NOTE,
+                ))
+        return story
+
+    @classmethod
     def _findings_section(cls, data):
-        story = cls._heading("6. Risk & Findings Summary")
+        story = cls._heading("7. Risk & Findings Summary")
         findings = cls._compile_findings(data)
         if not findings:
             story.append(Paragraph(
@@ -582,6 +653,29 @@ class PDFReportGenerator:
                 Paragraph(_esc(_first(anomaly, "evidence", "detail", default="—")), STYLE_CELL),
             ])
         table = Table(rows, colWidths=[45, 110, 70, CONTENT_WIDTH - 225], repeatRows=1)
+        table.setStyle(cls._table_style())
+        return table
+
+    @classmethod
+    def _port_table(cls, ports):
+        rows = [[Paragraph("Port", STYLE_CELL_HEAD), Paragraph("Service", STYLE_CELL_HEAD),
+                 Paragraph("State", STYLE_CELL_HEAD), Paragraph("Banner", STYLE_CELL_HEAD)]]
+        for port in ports:
+            p = _first(port, "port", default="—")
+            service = _first(port, "service", default="unknown")
+            state = _first(port, "state", default="—")
+            banner = _first(port, "banner", default="—")
+            # Banner already sanitized in service, double-escape for PDF
+            if banner is None or banner == "":
+                banner = "—"
+            color = _status_color(state) if state in ("open", "closed", "filtered") else MUTED
+            rows.append([
+                Paragraph(_esc(p), STYLE_CELL),
+                Paragraph(_esc(service), STYLE_CELL),
+                Paragraph(f'<font color="{_hex(color)}"><b>{_esc(str(state).upper())}</b></font>', STYLE_CELL),
+                Paragraph(_esc(banner), STYLE_CELL),
+            ])
+        table = Table(rows, colWidths=[50, 110, 70, CONTENT_WIDTH - 230], repeatRows=1)
         table.setStyle(cls._table_style())
         return table
 
