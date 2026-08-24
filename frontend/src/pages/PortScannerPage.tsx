@@ -1,11 +1,11 @@
 import { useState, FormEvent, useCallback } from 'react';
-import { Play, Loader2, AlertCircle, Shield, Search, Layers, Clock, Target, HardDrive, ArrowLeft, ChevronLeft, ChevronRight, Eye, History, Globe, Building, Flag, AlertTriangle, CheckCircle, HelpCircle } from 'lucide-react';
+import { Play, Loader2, AlertCircle, Shield, Search, Layers, Clock, Target, HardDrive, ArrowLeft, ChevronLeft, ChevronRight, Eye, History, Globe, Building, Flag, AlertTriangle, CheckCircle, HelpCircle, Activity, Zap } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { Badge, Button, Card, DataTable } from '../components/ui';
 import { apiClient, ApiClientError } from '../services/apiClient';
 import { useSlowRequest } from '../hooks/useSlowRequest';
 import { SlowRequestNotice } from '../components/SlowRequestNotice';
-import type { PortScanResult, PortScanRequest, PortScanHistoryItem, PortScanDetail, IPReputationResult } from '../types';
+import type { PortScanResult, PortScanRequest, PortScanHistoryItem, PortScanDetail, IPReputationResult, ThreatAssessment } from '../types';
 
 const QUICK_SCAN_PORTS = [21, 22, 23, 25, 53, 80, 110, 111, 135, 139, 143, 443, 445, 993, 995, 1723, 3306, 3389, 5432, 8080];
 const COMMON_SCAN_PORTS = [
@@ -50,6 +50,32 @@ function ConfidenceBadge({ confidence }: { confidence: string | null }) {
     very_high: 'danger',
   };
   return <Badge tone={toneMap[confidence] ?? 'primary'}>{confidence}</Badge>;
+}
+
+function ThreatLevelBadge({ level }: { level: ThreatAssessment['level'] }) {
+  const tones: Record<ThreatAssessment['level'], 'success' | 'primary' | 'warning' | 'danger'> = {
+    low: 'success',
+    medium: 'warning',
+    high: 'danger',
+    critical: 'danger',
+  };
+  const icons: Record<ThreatAssessment['level'], typeof Shield> = {
+    low: CheckCircle,
+    medium: AlertCircle,
+    high: AlertTriangle,
+    critical: Zap,
+  };
+  const Icon = icons[level];
+  return <Badge tone={tones[level]}><Icon size={12} className="mr-1" />{level.toUpperCase()}</Badge>;
+}
+
+function ThreatConfidenceBadge({ confidence }: { confidence: ThreatAssessment['confidence'] }) {
+  const tones: Record<ThreatAssessment['confidence'], 'success' | 'primary' | 'warning' | 'danger'> = {
+    high: 'success',
+    medium: 'warning',
+    low: 'danger',
+  };
+  return <Badge tone={tones[confidence] ?? 'primary'}>{confidence}</Badge>;
 }
 
 function IPReputationCard({ reputation, titleEyebrow }: { reputation: IPReputationResult | null | undefined; titleEyebrow?: string }) {
@@ -118,6 +144,76 @@ function IPReputationCard({ reputation, titleEyebrow }: { reputation: IPReputati
 
       {reputation.reason && isUnavailable && (
         <p className="mt-4 text-xs font-mono text-on-surface-variant/70">Reason: {reputation.reason}</p>
+      )}
+    </Card>
+  );
+}
+
+function ThreatAssessmentCard({ assessment, titleEyebrow }: { assessment: ThreatAssessment | null | undefined; titleEyebrow?: string }) {
+  if (!assessment) {
+    return (
+      <Card className="p-5">
+        <p className="eyebrow mb-2">{titleEyebrow ?? 'Overall threat'}</p>
+        <div className="flex items-start gap-3 rounded border bg-surface-low p-4">
+          <HelpCircle size={18} className="mt-0.5 text-on-surface-variant" />
+          <div>
+            <p className="text-sm font-medium text-on-surface">Threat assessment not available for this scan.</p>
+            <p className="mt-1 text-sm leading-6 text-on-surface-variant">This scan was created before overall threat assessment was enabled.</p>
+          </div>
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="eyebrow mb-2">{titleEyebrow ?? 'Overall threat'}</p>
+          <p className="text-xs font-mono uppercase tracking-wide text-on-surface-variant">Derived from port risk + IP reputation</p>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <p className="font-display text-2xl font-bold">{assessment.score} / 100</p>
+            <ThreatLevelBadge level={assessment.level} />
+            <ThreatConfidenceBadge confidence={assessment.confidence} />
+          </div>
+          <p className="mt-2 text-sm leading-6 text-on-surface-variant">{assessment.explanation}</p>
+        </div>
+        <Badge tone="primary"><Activity size={12} className="mr-1" />{assessment.confidence}</Badge>
+      </div>
+
+      <div className="mt-6 grid gap-4 sm:grid-cols-3">
+        <div className="rounded border bg-surface-low p-4">
+          <p className="text-xs font-medium uppercase tracking-wide text-on-surface-variant">Overall Score</p>
+          <p className="mt-2 font-display text-xl font-bold">{assessment.score}</p>
+          <p className="mt-1 text-xs text-on-surface-variant">Level: {assessment.level}</p>
+        </div>
+        <div className="rounded border bg-surface-low p-4">
+          <p className="text-xs font-medium uppercase tracking-wide text-on-surface-variant">Confidence</p>
+          <p className="mt-2 font-display text-xl font-bold capitalize">{assessment.confidence}</p>
+          <p className="mt-1 text-xs text-on-surface-variant">Evidence completeness</p>
+        </div>
+        <div className="rounded border bg-surface-low p-4">
+          <p className="text-xs font-medium uppercase tracking-wide text-on-surface-variant">Assessed</p>
+          <p className="mt-2 font-mono text-sm font-semibold">{formatDate(assessment.assessed_at)}</p>
+          <p className="mt-1 text-xs text-on-surface-variant">{assessment.factors.length} factor(s)</p>
+        </div>
+      </div>
+
+      {assessment.factors.length > 0 && (
+        <div className="mt-6">
+          <p className="eyebrow mb-2">Contributing factors</p>
+          <div className="space-y-2">
+            {assessment.factors.map((f, idx) => (
+              <div key={`${f.type}-${idx}`} className="flex items-center justify-between gap-3 rounded border bg-surface-low px-3 py-2">
+                <div>
+                  <p className="text-sm font-medium capitalize">{f.type.replace(/_/g, ' ')}</p>
+                  <p className="text-xs text-on-surface-variant">{f.description}</p>
+                </div>
+                <Badge tone={f.weight > 0 ? 'warning' : 'primary'}>+{f.weight}</Badge>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </Card>
   );
@@ -465,6 +561,7 @@ export function PortScannerPage() {
           {result && (
             <>
               <IPReputationCard reputation={result.ip_reputation ?? null} titleEyebrow="IP reputation — independent from port risk" />
+              <ThreatAssessmentCard assessment={result.threat_assessment ?? null} titleEyebrow="Overall threat — derived from port risk + IP reputation" />
               <Card className="mt-5">
                 <div className="border-b px-5 py-4">
                   <p className="font-display font-semibold flex items-center gap-2">
@@ -688,6 +785,10 @@ export function PortScannerPage() {
 
               <div className="mt-5">
                 <IPReputationCard reputation={detail.ip_reputation ?? null} titleEyebrow="Historical IP reputation" />
+              </div>
+
+              <div className="mt-5">
+                <ThreatAssessmentCard assessment={detail.threat_assessment ?? null} titleEyebrow="Historical overall threat" />
               </div>
 
               <Card className="mt-5">

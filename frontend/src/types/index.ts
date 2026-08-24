@@ -261,6 +261,7 @@ export interface ReportPortScanData {
   readonly status: string | null;
   readonly created_at: string | null;
   readonly ip_reputation: IPReputationResult | null;
+  readonly threat_assessment: ThreatAssessment | null;
   readonly summary: string | null;
 }
 
@@ -364,6 +365,21 @@ export interface IPReputationResult {
   readonly reason?: string | null;
 }
 
+export interface ThreatFactor {
+  readonly type: string;
+  readonly weight: number;
+  readonly description: string;
+}
+
+export interface ThreatAssessment {
+  readonly score: number;
+  readonly level: 'low' | 'medium' | 'high' | 'critical';
+  readonly confidence: 'high' | 'medium' | 'low';
+  readonly factors: readonly ThreatFactor[];
+  readonly explanation: string;
+  readonly assessed_at: string;
+}
+
 export interface PortScanResult {
   readonly target: string;
   readonly resolved_ip: string;
@@ -375,6 +391,7 @@ export interface PortScanResult {
   readonly summary: string;
   readonly risk_level: 'low' | 'medium' | 'high' | 'critical';
   readonly ip_reputation?: IPReputationResult | null;
+  readonly threat_assessment?: ThreatAssessment | null;
 }
 
 export interface PortScanRequest {
@@ -395,6 +412,7 @@ export interface PortScanHistoryItem {
   readonly status: 'completed' | 'failed';
   readonly created_at: string;
   readonly ip_reputation?: IPReputationResult | null;
+  readonly threat_assessment?: ThreatAssessment | null;
 }
 
 export interface PortScanHistoryMeta {
@@ -422,4 +440,5 @@ export interface PortScanDetail {
   readonly status: 'completed' | 'failed';
   readonly created_at: string;
   readonly ip_reputation?: IPReputationResult | null;
+  readonly threat_assessment?: ThreatAssessment | null;
 }

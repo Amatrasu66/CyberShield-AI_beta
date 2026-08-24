@@ -274,6 +274,28 @@ def _map_port_scan(row):
         # Ensure ip is present
         if not normalized_rep.get("ip"):
             normalized_rep["ip"] = row.get("resolved_ip")
+    # threat_assessment may be None for old scans
+    threat_raw = row.get("threat_assessment")
+    normalized_threat = None
+    if isinstance(threat_raw, dict):
+        allowed_threat = {"score", "level", "confidence", "factors", "explanation", "assessed_at"}
+        normalized_threat = {k: v for k, v in threat_raw.items() if k in allowed_threat}
+        # Sanitize factors: ensure each factor only has type/weight/description
+        if isinstance(normalized_threat.get("factors"), list):
+            sanitized_factors = []
+            for f in normalized_threat["factors"]:
+                if isinstance(f, dict):
+                    sanitized_factors.append({
+                        "type": str(f.get("type", ""))[:64],
+                        "weight": int(f.get("weight", 0)) if isinstance(f.get("weight"), (int, float)) else 0,
+                        "description": str(f.get("description", ""))[:256],
+                    })
+            normalized_threat["factors"] = sanitized_factors
+        # Ensure score is int bounded
+        try:
+            normalized_threat["score"] = max(0, min(100, int(normalized_threat.get("score", 0))))
+        except Exception:
+            normalized_threat["score"] = 0
     return {
         "target": row.get("target"),
         "resolved_ip": row.get("resolved_ip"),
@@ -287,6 +309,7 @@ def _map_port_scan(row):
         "status": row.get("status"),
         "created_at": row.get("created_at"),
         "ip_reputation": normalized_rep,
+        "threat_assessment": normalized_threat,
         "summary": f"Scanned {row.get('ports_scanned')} ports: {open_count} open, {closed_count} closed, {filtered_count} filtered.",
     }
 

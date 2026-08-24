@@ -66,6 +66,7 @@ def scan_ports():
         "summary": result.summary,
         "risk_level": result.risk_level,
         "ip_reputation": result.ip_reputation,
+        "threat_assessment": result.threat_assessment,
     }
 
     return success_response(result_dict, "Port scan completed")

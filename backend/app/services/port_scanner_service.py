@@ -68,6 +68,7 @@ class ScanResult:
     summary: str
     risk_level: str  # "low" | "medium" | "high" | "critical"
     ip_reputation: Optional[dict] = None
+    threat_assessment: Optional[dict] = None
 
 
 class PortScannerService:
@@ -202,6 +203,20 @@ class PortScannerService:
             # Never let reputation break the scan
             pass
 
+        # Threat assessment (derived, never breaks scan)
+        threat_assessment: Optional[dict] = None
+        try:
+            from .threat_assessment_service import ThreatAssessmentService
+            threat_assessment = ThreatAssessmentService.assess(
+                port_risk=risk_level,
+                ip_reputation=ip_reputation,
+                open_ports=open_ports,
+                ports_scanned=len(port_list),
+                status="completed",
+            )
+        except Exception:
+            threat_assessment = None
+
         result = ScanResult(
             target=target,
             resolved_ip=resolved_ip,
@@ -213,6 +228,7 @@ class PortScannerService:
             summary=summary,
             risk_level=risk_level,
             ip_reputation=ip_reputation,
+            threat_assessment=threat_assessment,
         )
 
         # Persist completed scan for authenticated user
@@ -424,6 +440,7 @@ class PortScannerService:
             "risk_level": result.risk_level,
             "status": "completed",
             "ip_reputation": result.ip_reputation,
+            "threat_assessment": result.threat_assessment,
         }
 
         try:
@@ -492,7 +509,7 @@ class PortScannerService:
                 client.table("port_scans")
                 .select(
                     "id, target, resolved_ip, ports_scanned, open_ports, "
-                    "scan_duration_ms, risk_level, status, ip_reputation, created_at"
+                    "scan_duration_ms, risk_level, status, ip_reputation, threat_assessment, created_at"
                 )
                 .eq("user_id", user_id)
                 .order("created_at", desc=True)

@@ -506,7 +506,29 @@ class PDFReportGenerator:
                 ]))
                 # Note distinction
                 story.append(Paragraph(
-                    "Note: Port risk is derived from open ports/services; IP reputation is an independent AbuseIPDB signal. No combined score is computed in this report.",
+                    "Note: Port risk is derived from open ports/services; IP reputation is an independent AbuseIPDB signal.",
+                    STYLE_NOTE,
+                ))
+
+            # Overall Threat Assessment — derived, keep distinct from Port Risk and IP Reputation
+            story.append(Paragraph("Overall Threat Assessment — Derived from Port Risk + IP Reputation", STYLE_H2))
+            threat = scan.get("threat_assessment")
+            if not isinstance(threat, dict) or not threat:
+                story.append(Paragraph("Not available — this scan was created before overall threat assessment was enabled.", STYLE_NOTE))
+            else:
+                story.append(cls._kv_table([
+                    ("Overall Score", f"{_first(threat, 'score', default='—')} / 100"),
+                    ("Overall Level", _first(threat, "level", default="—")),
+                    ("Confidence", _first(threat, "confidence", default="—")),
+                    ("Explanation", _first(threat, "explanation", default="—")),
+                    ("Assessed At", _fmt_date(_first(threat, "assessed_at")) or "—"),
+                ]))
+                factors = threat.get("factors")
+                if factors:
+                    story.append(Paragraph("Contributing Factors", STYLE_H2))
+                    story.append(cls._threat_factors_table(factors))
+                story.append(Paragraph(
+                    "Note: Overall threat amplifies independent signals; Port Risk and IP Reputation remain separate. No fake precision.",
                     STYLE_NOTE,
                 ))
         return story
@@ -676,6 +698,28 @@ class PDFReportGenerator:
                 Paragraph(_esc(banner), STYLE_CELL),
             ])
         table = Table(rows, colWidths=[50, 110, 70, CONTENT_WIDTH - 230], repeatRows=1)
+        table.setStyle(cls._table_style())
+        return table
+
+    @classmethod
+    def _threat_factors_table(cls, factors):
+        rows = [[Paragraph("Weight", STYLE_CELL_HEAD), Paragraph("Type", STYLE_CELL_HEAD),
+                 Paragraph("Description", STYLE_CELL_HEAD)]]
+        for factor in factors:
+            f_type = _first(factor, "type", default="—")
+            weight = _first(factor, "weight", default="—")
+            desc = _first(factor, "description", default="—")
+            # Weight as string with + sign
+            try:
+                w_str = f"+{int(weight)}"
+            except Exception:
+                w_str = str(weight)
+            rows.append([
+                Paragraph(_esc(w_str), STYLE_CELL),
+                Paragraph(_esc(f_type), STYLE_CELL),
+                Paragraph(_esc(desc), STYLE_CELL),
+            ])
+        table = Table(rows, colWidths=[50, 120, CONTENT_WIDTH - 170], repeatRows=1)
         table.setStyle(cls._table_style())
         return table
 
