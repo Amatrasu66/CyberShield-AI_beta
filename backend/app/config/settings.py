@@ -34,6 +34,20 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _env_float(name: str, default: float) -> float:
+    """Parse a float environment variable safely, clamped to >0."""
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        val = float(raw.strip())
+        if val <= 0:
+            return default
+        return val
+    except ValueError:
+        return default
+
+
 def _env_list(name: str, default: str) -> list:
     """Parse a comma separated list environment variable."""
     raw = os.environ.get(name, default)
@@ -87,6 +101,7 @@ class Config:
     PORT_SCANNER_BANNER_TIMEOUT = _env_int("PORT_SCANNER_BANNER_TIMEOUT", 1)
     PORT_SCANNER_BANNER_MAX_BYTES = _env_int("PORT_SCANNER_BANNER_MAX_BYTES", 256)
     PORT_SCANNER_ALLOW_PRIVATE_ADDRESSES = _env_bool("PORT_SCANNER_ALLOW_PRIVATE_ADDRESSES", False)
+    PORT_SCANNER_DNS_TIMEOUT = _env_float("PORT_SCANNER_DNS_TIMEOUT", 3.0)
 
     # --- IP Reputation / Threat Intel ---------------------------------------
     IP_REPUTATION_ENABLED = _env_bool("IP_REPUTATION_ENABLED", False)
@@ -156,6 +171,16 @@ class Config:
     # stamps iat with its own clock, which can be a couple of seconds ahead of
     # the backend host; PyJWT otherwise rejects such tokens as immature.
     SUPABASE_JWT_LEEWAY = _env_int("SUPABASE_JWT_LEEWAY", 10)
+
+    # --- Rate Limiting (process-local sliding window) --------------------
+    # No Redis; limits are per-process. See SECURITY_HARDENING_PHASE1.md.
+    RATE_LIMIT_ENABLED = _env_bool("RATE_LIMIT_ENABLED", True)
+    # Stricter for expensive port scans
+    RATE_LIMIT_PORT_SCAN = _env_int("RATE_LIMIT_PORT_SCAN", 5)
+    RATE_LIMIT_PORT_SCAN_WINDOW = _env_int("RATE_LIMIT_PORT_SCAN_WINDOW", 60)
+    # Lighter for IP reputation (cache-backed)
+    RATE_LIMIT_IP_REPUTATION = _env_int("RATE_LIMIT_IP_REPUTATION", 20)
+    RATE_LIMIT_IP_REPUTATION_WINDOW = _env_int("RATE_LIMIT_IP_REPUTATION_WINDOW", 60)
 
     # --- Reports (PDF generation) ----------------------------------------
     # Private Supabase Storage bucket where generated PDF reports are stored.

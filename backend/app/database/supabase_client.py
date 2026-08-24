@@ -21,8 +21,6 @@ Three client profiles are exposed:
   Security. Server-only; never expose it to the frontend.
 """
 
-from functools import lru_cache
-
 from supabase import Client, create_client
 
 from ..config import get_config
@@ -60,20 +58,33 @@ def _build_client(url: str, key: str) -> Client | None:
     return create_client(url, key)
 
 
-@lru_cache(maxsize=1)
+_anon_client_cached: Client | None = None
+_anon_client_config: tuple[str, str] | None = None
+
+
 def get_supabase_client() -> Client | None:
     """Return the shared low-privilege Supabase client, or ``None``.
 
     Uses the publishable key, falling back to the legacy anon key and then the
     legacy ``SUPABASE_KEY`` for backward compatibility. Access is constrained
-    by Row Level Security.
+    by Row Level Security. Non-None clients are cached per-process; ``None``
+    is never cached so a later valid configuration is picked up.
 
     Returns:
         A configured :class:`supabase.Client`, or ``None`` if ``SUPABASE_URL``
         and a low-privilege key are not both present.
     """
+    global _anon_client_cached, _anon_client_config
     cfg = get_config()
-    return _build_client(cfg.SUPABASE_URL, _publishable_key())
+    key = _publishable_key()
+    cache_key = (cfg.SUPABASE_URL or "", key or "")
+    if _anon_client_cached is not None and _anon_client_config == cache_key:
+        return _anon_client_cached
+    client = _build_client(cfg.SUPABASE_URL, key)
+    if client is not None:
+        _anon_client_cached = client
+        _anon_client_config = cache_key
+    return client
 
 
 def get_user_supabase_client(access_token: str = None) -> Client | None:
@@ -103,22 +114,49 @@ def get_user_supabase_client(access_token: str = None) -> Client | None:
     return client
 
 
-@lru_cache(maxsize=1)
+_admin_client_cached: Client | None = None
+_admin_client_config: tuple[str, str] | None = None
+
+
 def get_supabase_admin_client() -> Client | None:
     """Return the shared elevated Supabase client, or ``None``.
 
     Uses the secret key, falling back to the legacy service-role key for
     backward compatibility. The client runs with elevated privileges that
     bypass Row Level Security; use it only for trusted server-side operations
-    and never expose it to the frontend.
+    and never expose it to the frontend. Non-None clients are cached; ``None``
+    is never cached so subsequent valid config is not masked (fail-closed for
+    privileged ops must remain observable).
 
     Returns:
         A configured :class:`supabase.Client`, or ``None`` if ``SUPABASE_URL``
         and an elevated key are not both present.
     """
+    global _admin_client_cached, _admin_client_config
     cfg = get_config()
     key = _first_key(
         cfg.SUPABASE_SECRET_KEY,
         cfg.SUPABASE_SERVICE_ROLE_KEY,
     )
-    return _build_client(cfg.SUPABASE_URL, key)
+    cache_key = (cfg.SUPABASE_URL or "", key or "")
+    if _admin_client_cached is not None and _admin_client_config == cache_key:
+        return _admin_client_cached
+    client = _build_client(cfg.SUPABASE_URL, key)
+    if client is not None:
+        _admin_client_cached = client
+        _admin_client_config = cache_key
+    return client
+
+
+def clear_supabase_client_cache():
+    """Clear cached anon/admin clients (used in tests)."""
+    global _anon_client_cached, _anon_client_config, _admin_client_cached, _admin_client_config
+    _anon_client_cached = None
+    _anon_client_config = None
+    _admin_client_cached = None
+    _admin_client_config = None
+
+
+# Backwards compat for tests expecting lru_cache API
+get_supabase_client.cache_clear = clear_supabase_client_cache  # type: ignore[attr-defined]
+get_supabase_admin_client.cache_clear = clear_supabase_client_cache  # type: ignore[attr-defined]

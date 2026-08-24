@@ -50,6 +50,11 @@ def _get_cache_client():
 
     Strictly prefers service_role (admin) which bypasses RLS on the shared
     cache. Frontend must never access this table directly.
+
+    FAIL-CLOSED: if the service-role client is unavailable, return None
+    instead of downgrading to anon/publishable. Privileged cache operations
+    must not silently fall back to an unprivileged client that would be
+    denied by RLS and mask misconfiguration.
     """
     # 1. Try admin via factory (uses get_config)
     if get_supabase_admin_client is not None:
@@ -57,14 +62,14 @@ def _get_cache_client():
             client = get_supabase_admin_client()
             if client is not None:
                 return client
+            # Explicit None: admin not configured — fail closed, do not try anon
+            _log_safe("cache_admin_unavailable_factory", extra={"reason": "service_role_not_configured"})
         except Exception as exc:
             _log_safe("cache_admin_client_error", extra={"error_type": type(exc).__name__})
     # 2. Try building directly from Flask current_app config (handles Render env and tests)
     try:
         from flask import current_app
-        # current_app is available when inside app/request context; check config directly
         url = current_app.config.get("SUPABASE_URL")
-        # Prefer SUPABASE_SECRET_KEY, fallback to SERVICE_ROLE
         key = current_app.config.get("SUPABASE_SECRET_KEY") or current_app.config.get("SUPABASE_SERVICE_ROLE_KEY")
         if url and key:
             from supabase import create_client
@@ -72,23 +77,14 @@ def _get_cache_client():
                 return create_client(url.strip(), key.strip())
             except Exception as exc:
                 _log_safe("cache_direct_admin_failed", extra={"error_type": type(exc).__name__})
+        elif url and not key:
+            _log_safe("cache_admin_unavailable", extra={"reason": "service_role_not_configured"})
     except RuntimeError:
         pass
     except Exception as exc:
         _log_safe("cache_direct_admin_error", extra={"error_type": type(exc).__name__})
-    # 3. Final fallback: try anon (will be blocked by RLS, but keep for local dev without secret)
-    # We do not log as error here; cache will be treated as miss.
-    if get_supabase_client is not None:
-        try:
-            client = get_supabase_client()
-            if client is not None:
-                # This client will be denied by RLS (no policies) — use only if admin truly unavailable in dev
-                # Log that we are falling back, but don't hide it
-                _log_safe("cache_fallback_anon", extra={})
-                return client
-        except Exception:
-            pass
-    _log_safe("cache_admin_unavailable", extra={"reason": "service_role_not_configured"})
+    # No anon fallback — fail closed. Returning None causes cache get/put to
+    # behave as miss/no-op and logs above make misconfiguration visible.
     return None
 
 

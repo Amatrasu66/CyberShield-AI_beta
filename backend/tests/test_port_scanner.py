@@ -990,12 +990,13 @@ class TestPortScannerMalformedData:
             mock_socket_class.side_effect = create_socket_factory({
                 80: MockSocket(raise_on_connect=socket.gaierror("Name resolution failed")),
             })
+            with patch("socket.getaddrinfo", side_effect=socket.gaierror("getaddrinfo failed")):
 
-            PortScannerService.scan_ports(
-                target="unresolvable.invalid",
-                ports=[80],
-                user_id=auth_user_id,
-            )
+                PortScannerService.scan_ports(
+                    target="unresolvable.invalid",
+                    ports=[80],
+                    user_id=auth_user_id,
+                )
 
             inserts = fake_supabase.inserts.get("port_scans", [])
             assert len(inserts) == 1

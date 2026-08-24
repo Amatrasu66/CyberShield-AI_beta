@@ -11,6 +11,7 @@ POST /api/scanner/ip-reputation
 from flask import Blueprint, current_app, request
 
 from ..middleware import get_current_user_id, require_auth
+from ..middleware.rate_limiter import rate_limit
 from ..services import PortScannerService
 from ..services.ip_reputation_service import IPReputationService
 from ..utils.helpers import success_response
@@ -22,6 +23,7 @@ port_bp = Blueprint("port", __name__)
 
 @port_bp.post("/ports")
 @require_auth
+@rate_limit("port_scan")
 def scan_ports():
     data = require_json()
     target = data.get("target")
@@ -110,6 +112,7 @@ def get_port_scan_detail(scan_id: str):
 
 @port_bp.get("/ip-reputation/<path:ip>")
 @require_auth
+@rate_limit("ip_reputation")
 def get_ip_reputation(ip: str):
     """Retrieve IP reputation for a single IP (authenticated).
 
@@ -135,6 +138,7 @@ def get_ip_reputation(ip: str):
 
 @port_bp.post("/ip-reputation")
 @require_auth
+@rate_limit("ip_reputation")
 def post_ip_reputation():
     """Check reputation for IP or hostname via POST body.
 

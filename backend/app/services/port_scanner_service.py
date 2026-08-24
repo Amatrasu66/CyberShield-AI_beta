@@ -20,6 +20,7 @@ Safety constraints:
 - Explicit port limit
 """
 
+import ipaddress
 import json
 import socket
 import time
@@ -103,25 +104,19 @@ class PortScannerService:
         # Validate target BEFORE any socket connection
         target = validate_hostname_or_ip(target, max_length=cfg.get("URL_MAX_LENGTH", 2048))
 
-        # SSRF protection: block private/loopback/link-local/reserved
-        if not cfg.get("PORT_SCANNER_ALLOW_PRIVATE_ADDRESSES", False) and is_private_hostname(target):
-            raise ValidationError(
-                "Target resolves to a private or loopback address and is refused "
-                "to prevent scanner abuse.",
-                details={"field": "target"},
-            )
-
         # Resolve ports from explicit list or profile
         max_ports = int(cfg.get("PORT_SCANNER_MAX_PORTS", DEFAULT_MAX_PORTS))
         port_list = resolve_scan_ports(ports, profile, max_ports)
 
-        # Resolve target to IP for scanning and display
-        resolved_ip = PortScannerService._resolve_target(target, cfg)
+        # Resolve target to IP ONCE and validate — TOCTOU fix:
+        # The single resolved IP is validated for private/reserved and then
+        # reused for every socket connection; we never re-resolve the hostname.
+        resolved_ip = PortScannerService._resolve_target_secure(target, cfg)
 
         # Perform the scan with bounded concurrency and timeouts
         started = time.perf_counter()
         open_ports = PortScannerService._scan_port_list(
-            target, resolved_ip, port_list, cfg
+            resolved_ip, port_list, cfg
         )
         duration_ms = round((time.perf_counter() - started) * 1000)
 
@@ -237,27 +232,142 @@ class PortScannerService:
         return result
 
     @staticmethod
-    def _resolve_target(target: str, cfg: dict) -> str:
-        """Resolve target hostname to IP address."""
+    def _resolve_target_secure(target: str, cfg: dict) -> str:
+        """Resolve target hostname to a single validated IP (TOCTOU-safe).
+
+        Resolution is performed ONCE with a bounded watchdog; every returned
+        address is validated against private/loopback/link-local/reserved/
+        multicast/unspecified. If any address is private the target is
+        rejected. The returned ``resolved_ip`` is the validated IP that MUST
+        be used for all subsequent socket connections — callers must not
+        re-resolve the hostname.
+
+        IPv4 and IPv6 are both supported; the chosen address prefers a
+        non-link-local entry when available. Unresolvable hostnames return
+        ``target`` as-is so the scan can fail gracefully as ``filtered``.
+        DNS timeouts raise a safe ``ValidationError`` without leaking
+        resolver internals.
+        """
+        allow_private = bool(cfg.get("PORT_SCANNER_ALLOW_PRIVATE_ADDRESSES", False))
+
+        # Fast path: target is already an IP literal — no DNS needed
         try:
-            # Use getaddrinfo to support both IPv4 and IPv6
-            info = socket.getaddrinfo(target, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
-            # Prefer IPv4 for display, but use first result
-            for addr in info:
-                ip = addr[4][0]
-                # Skip IPv6 link-local for display
-                if not ip.startswith("fe80::"):
-                    return ip
-            return info[0][4][0]
+            parsed = ipaddress.ip_address(target)
+            if not allow_private and (
+                parsed.is_private
+                or parsed.is_loopback
+                or parsed.is_link_local
+                or parsed.is_reserved
+                or parsed.is_multicast
+                or parsed.is_unspecified
+            ):
+                raise ValidationError(
+                    "Target resolves to a private or loopback address and is refused "
+                    "to prevent scanner abuse.",
+                    details={"field": "target"},
+                )
+            return str(parsed)
+        except ValueError:
+            pass
+
+        # Hostname: single bounded getaddrinfo call (watchdog)
+        dns_timeout = float(cfg.get("PORT_SCANNER_DNS_TIMEOUT", 3.0) or 3.0)
+        # Clamp to sane bounds to prevent misconfig from disabling protection
+        if dns_timeout <= 0:
+            dns_timeout = 3.0
+        if dns_timeout > 10:
+            dns_timeout = 10.0
+        try:
+            info = PortScannerService._getaddrinfo_with_timeout(target, dns_timeout)
+        except ValidationError:
+            raise
         except socket.gaierror:
-            # If resolution fails, return target as-is; scan will fail gracefully
+            # Unresolvable — return target as-is; per-port gaierror will mark filtered
             return target
+
+        # Validate ALL resolved addresses; reject if any is private/reserved
+        resolved_ips: list[str] = []
+        for addr in info:
+            try:
+                ip_str = addr[4][0]
+                resolved_ips.append(ip_str)
+                if not allow_private:
+                    parsed = ipaddress.ip_address(ip_str)
+                    if (
+                        parsed.is_private
+                        or parsed.is_loopback
+                        or parsed.is_link_local
+                        or parsed.is_reserved
+                        or parsed.is_multicast
+                        or parsed.is_unspecified
+                    ):
+                        raise ValidationError(
+                            "Target resolves to a private or loopback address and is refused "
+                            "to prevent scanner abuse.",
+                            details={"field": "target"},
+                        )
+            except ValueError:
+                continue
+
+        if not resolved_ips:
+            return target
+
+        # Choose display/connect IP: prefer non-fe80::, else first validated entry
+        for ip in resolved_ips:
+            if not ip.startswith("fe80::"):
+                return ip
+        return resolved_ips[0]
+
+    @staticmethod
+    def _getaddrinfo_with_timeout(target: str, timeout: float):
+        """Run ``socket.getaddrinfo`` with a bounded watchdog.
+
+        Uses a one-shot ``ThreadPoolExecutor`` so the Gunicorn worker thread
+        blocks at most ``timeout`` seconds even if the system resolver stalls.
+        No Redis or external service is required and the implementation is
+        compatible with Render's sync Gunicorn workers.
+
+        Raises:
+            ValidationError: on DNS timeout with a generic message (no
+                internal exception details leaked).
+            socket.gaierror: on normal resolution failure (caller handles).
+        """
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(socket.getaddrinfo, target, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+        try:
+            return future.result(timeout=timeout)
+        except concurrent.futures.TimeoutError:
+            # Do not block on the still-running resolver thread; the worker
+            # is freed after `timeout` seconds instead of indefinitely.
+            # The resolver thread is daemon-like and will be reaped when the
+            # process exits; we abandon it to preserve availability.
+            raise ValidationError(
+                "Target host resolution timed out",
+                details={"field": "target", "reason": "dns_timeout"},
+            )
+        finally:
+            # shutdown(wait=False) ensures we do not block on a hung resolver
+            try:
+                executor.shutdown(wait=False, cancel_futures=True)
+            except TypeError:
+                # Python <3.9 does not support cancel_futures kw
+                executor.shutdown(wait=False)
+
+    @staticmethod
+    def _resolve_target(target: str, cfg: dict) -> str:
+        """Legacy wrapper — delegates to the TOCTOU-safe resolver."""
+        return PortScannerService._resolve_target_secure(target, cfg)
 
     @staticmethod
     def _scan_port_list(
-        target: str, resolved_ip: str, ports: list[int], cfg: dict
+        resolved_ip: str, ports: list[int], cfg: dict
     ) -> list[PortResult]:
-        """Scan a list of ports with bounded concurrency and timeouts."""
+        """Scan a list of ports with bounded concurrency and timeouts.
+
+        ``resolved_ip`` must be the validated IP returned by
+        ``_resolve_target_secure`` — callers must not re-resolve the
+        original hostname here (TOCTOU protection).
+        """
         per_port_timeout = float(cfg.get("PORT_SCANNER_CONNECT_TIMEOUT", 2.0))
         total_timeout = float(cfg.get("PORT_SCANNER_TOTAL_TIMEOUT", 30.0))
         max_concurrency = int(cfg.get("PORT_SCANNER_MAX_CONCURRENCY", 50))
@@ -269,11 +379,11 @@ class PortScannerService:
         start_time = time.perf_counter()
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrency) as executor:
-            # Submit all tasks
+            # Submit all tasks — connect to validated IP, not hostname
             future_to_port = {
                 executor.submit(
                     PortScannerService._scan_single_port,
-                    target,
+                    resolved_ip,
                     port,
                     per_port_timeout,
                     banner_timeout,
@@ -308,25 +418,36 @@ class PortScannerService:
 
     @staticmethod
     def _scan_single_port(
-        target: str,
+        resolved_ip: str,
         port: int,
         connect_timeout: float,
         banner_timeout: float,
         banner_max_bytes: int,
     ) -> PortResult:
-        """Scan a single port using TCP connect.
+        """Scan a single port using TCP connect against a pre-validated IP.
 
-        Attempts connection, then tries to read a banner if open.
+        ``resolved_ip`` must be the validated IP from
+        ``_resolve_target_secure``. The socket family (AF_INET / AF_INET6)
+        is derived from that IP so IPv6 is correctly supported; unresolvable
+        targets fall back to AF_INET and are reported as filtered on failure.
         """
         service = get_service_name(port)
 
         try:
-            # Create socket with timeout
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            # Determine address family from validated IP
+            family = socket.AF_INET
+            try:
+                parsed = ipaddress.ip_address(resolved_ip)
+                family = socket.AF_INET6 if parsed.version == 6 else socket.AF_INET
+            except ValueError:
+                # Unresolvable hostname string — will fail as filtered
+                family = socket.AF_INET
+
+            sock = socket.socket(family, socket.SOCK_STREAM)
             sock.settimeout(connect_timeout)
 
-            # Try to connect
-            result = sock.connect_ex((target, port))
+            # Connect to validated IP, not original hostname (TOCTOU fix)
+            result = sock.connect_ex((resolved_ip, port))
 
             if result == 0:
                 # Connection succeeded - port is open

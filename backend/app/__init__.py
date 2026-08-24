@@ -38,6 +38,39 @@ def configure_logging(app: Flask):
     app.logger.propagate = False
 
 
+def _resolve_cors_origins(app: Flask) -> list:
+    """Resolve effective CORS origins, stripping wildcard in production.
+
+    - Development / testing: wildcard ``*`` is allowed for convenience.
+    - Production: wildcard is removed and a warning is logged; at least one
+      explicit origin must be configured via ``CORS_ORIGINS`` or all
+      cross-origin requests will be denied (fail-closed). This preserves
+      ``CORS_ORIGINS`` configurability while ensuring production never
+      relies on ``*``.
+    """
+    raw = app.config.get("CORS_ORIGINS", "*")
+    if isinstance(raw, str):
+        origins = [o.strip() for o in raw.split(",") if o.strip()]
+    elif isinstance(raw, (list, tuple)):
+        origins = [str(o).strip() for o in raw if str(o).strip()]
+    else:
+        origins = []
+    env = str(app.config.get("ENVIRONMENT", "development")).lower()
+    if env == "production" and "*" in origins:
+        app.logger.warning(
+            "CORS wildcard '*' is not allowed in production; removing it. "
+            "Configure CORS_ORIGINS with explicit origins."
+        )
+        origins = [o for o in origins if o != "*"]
+        if not origins:
+            app.logger.error(
+                "No explicit CORS_ORIGINS configured for production; "
+                "all cross-origin API requests will be denied."
+            )
+        app.config["CORS_ORIGINS"] = origins
+    return origins
+
+
 def create_app(config_object=None, **config_overrides):
     """Application factory.
 
@@ -52,9 +85,10 @@ def create_app(config_object=None, **config_overrides):
     app.config.from_mapping(Config.as_flask_mapping())
     app.config.update(**config_overrides)
 
+    effective_origins = _resolve_cors_origins(app)
     CORS(
         app,
-        resources={r"/api/*": {"origins": app.config.get("CORS_ORIGINS")}},
+        resources={r"/api/*": {"origins": effective_origins}},
         supports_credentials=app.config.get("CORS_SUPPORTS_CREDENTIALS", False),
     )
 
