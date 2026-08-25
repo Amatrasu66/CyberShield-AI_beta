@@ -420,30 +420,63 @@ def validate_hostname_or_ip(target: str, max_length: int = 255) -> str:
             "Target must not contain credentials", details={"field": "target"}
         )
 
-    # Split host:port if present (we only want the host part)
-    if ":" in target and not target.startswith("["):
-        # Could be IPv6 in brackets or host:port
-        host_part = target.split(":", 1)[0]
-        # Validate it's not an IPv6 address without brackets
-        try:
-            ipaddress.ip_address(host_part)
-            # It's an IP, but IPv6 needs brackets; reject bare IPv6 with port
-            if target.count(":") > 1:
-                raise ValidationError(
-                    "IPv6 addresses must be enclosed in brackets (e.g., [::1])",
-                    details={"field": "target"},
-                )
-        except ValueError:
-            # It's a hostname with port, take hostname part
-            target = host_part
-    elif target.startswith("[") and "]" in target:
-        # IPv6 in brackets, possibly with port
+    # Bracketed IPv6 literal: [2001:db8::1] or [::1]:8080
+    if target.startswith("[") and "]" in target:
         bracket_end = target.index("]")
-        target = target[1:bracket_end]  # Extract IPv6 address
+        inner = target[1:bracket_end]
         try:
-            ipaddress.ip_address(target)
+            ipaddress.ip_address(inner)
         except ValueError:
             raise ValidationError("Invalid IPv6 address", details={"field": "target"})
+        target = inner
+        # Ignore trailing :port after bracket (e.g. [::1]:8080) — target is host only
+    else:
+        # Detect bare IPv6 with port without brackets (e.g., 2001:db8::1:80) — reject before bare IP check
+        if target.count(":") > 1 and ":" in target:
+            potential_host, potential_port = target.rsplit(":", 1)
+            if potential_port.isdigit():
+                try:
+                    ipaddress.ip_address(potential_host)
+                    raise ValidationError(
+                        "IPv6 addresses must be enclosed in brackets (e.g., [::1])",
+                        details={"field": "target"},
+                    )
+                except ValueError:
+                    pass
+        # Bare IP literal (IPv4 or IPv6) — must be checked before host:port splitting
+        # so bare IPv6 like 2001:4860:4860::8888 is not truncated at first colon
+        try:
+            parsed = ipaddress.ip_address(target)
+            return str(parsed)
+        except ValueError:
+            pass
+        # Hostname with optional :port (single colon only). Bare IPv6 already returned
+        # above, so any remaining multiple colons is malformed IPv6 without brackets.
+        if ":" in target:
+            if target.count(":") > 1:
+                raise ValidationError("Invalid IPv6 address", details={"field": "target"})
+            # Single colon -> hostname:port or IPv4:port
+            host_part = target.split(":", 1)[0]
+            # Validate port part is numeric if present
+            port_part = target.split(":", 1)[1]
+            if port_part and not port_part.isdigit():
+                raise ValidationError(
+                    "Target must be a valid hostname or IP address",
+                    details={"field": "target", "value": target},
+                )
+            if port_part and port_part.isdigit():
+                p = int(port_part)
+                if not (1 <= p <= 65535):
+                    raise ValidationError(
+                        "Target must be a valid hostname or IP address",
+                        details={"field": "target", "value": target},
+                    )
+            target = host_part
+            if not target:
+                raise ValidationError(
+                    "Target must be a valid hostname or IP address",
+                    details={"field": "target", "value": target},
+                )
 
     # Strip trailing dot from FQDN
     if target.endswith("."):

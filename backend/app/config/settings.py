@@ -109,6 +109,9 @@ class Config:
     IP_REPUTATION_API_KEY = os.environ.get("IP_REPUTATION_API_KEY", "").strip()
     IP_REPUTATION_TIMEOUT = _env_int("IP_REPUTATION_TIMEOUT", 5)
     IP_REPUTATION_MAX_RESPONSE_BYTES = _env_int("IP_REPUTATION_MAX_RESPONSE_BYTES", 32_768)
+    # AbuseIPDB circuit-breaker: consecutive provider-transport failures before opening
+    IP_REPUTATION_CIRCUIT_THRESHOLD = _env_int("IP_REPUTATION_CIRCUIT_THRESHOLD", 5)
+    IP_REPUTATION_CIRCUIT_COOLDOWN = _env_int("IP_REPUTATION_CIRCUIT_COOLDOWN", 60)
     # AbuseIPDB endpoint is fixed; never allow user-controlled URL
     IP_REPUTATION_ABUSEIPDB_URL = os.environ.get(
         "IP_REPUTATION_ABUSEIPDB_URL", "https://api.abuseipdb.com/api/v2/check"

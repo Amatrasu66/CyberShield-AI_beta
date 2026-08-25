@@ -33,6 +33,9 @@ from typing import Optional, Protocol
 
 import requests
 
+import threading
+import time as _time
+
 from ..config import get_config
 from ..errors import ValidationError
 
@@ -93,6 +96,82 @@ def _reputation_from_abuse(score: int, reports: int, is_whitelisted: bool) -> tu
     if score > 0:
         return "suspicious", False, True
     return "unknown", False, False
+
+
+# ------------------------------------------------------------------ circuit breaker (process-local, per-provider)
+
+_CIRCUIT_FAILURE_REASONS = {"rate_limited", "provider_error", "timeout", "network_error"}
+_circuit_state: dict[str, dict] = {}
+_circuit_lock = threading.Lock()
+
+
+def _circuit_threshold() -> int:
+    try:
+        from flask import current_app
+        v = current_app.config.get("IP_REPUTATION_CIRCUIT_THRESHOLD")
+        if v is not None:
+            return max(1, int(v))
+    except Exception:
+        pass
+    try:
+        return max(1, int(get_config().IP_REPUTATION_CIRCUIT_THRESHOLD))
+    except Exception:
+        return 5
+
+
+def _circuit_cooldown() -> int:
+    try:
+        from flask import current_app
+        v = current_app.config.get("IP_REPUTATION_CIRCUIT_COOLDOWN")
+        if v is not None:
+            return max(1, int(v))
+    except Exception:
+        pass
+    try:
+        return max(1, int(get_config().IP_REPUTATION_CIRCUIT_COOLDOWN))
+    except Exception:
+        return 60
+
+
+def _circuit_is_failure(result: "ReputationResult") -> bool:
+    """Only transport failures (429/5xx/timeout) count; normal reputations do not."""
+    return bool(result and result.reputation == "unavailable" and (result.reason or "") in _CIRCUIT_FAILURE_REASONS)
+
+
+def _circuit_should_block(provider_name: str) -> bool:
+    with _circuit_lock:
+        entry = _circuit_state.get(provider_name)
+        if not entry or entry.get("opened_at") is None:
+            return False
+        cooldown = _circuit_cooldown()
+        if _time.monotonic() - entry["opened_at"] < cooldown:
+            return True
+        # Cooldown elapsed → allow probe (half-open). Keep entry until probe result decides.
+        return False
+
+
+def _circuit_record_success(provider_name: str) -> None:
+    with _circuit_lock:
+        if provider_name in _circuit_state:
+            _circuit_state.pop(provider_name, None)
+
+
+def _circuit_record_failure(provider_name: str) -> None:
+    with _circuit_lock:
+        entry = _circuit_state.get(provider_name)
+        if not entry:
+            entry = {"failures": 0, "opened_at": None}
+            _circuit_state[provider_name] = entry
+        entry["failures"] = int(entry.get("failures", 0)) + 1
+        if entry["failures"] >= _circuit_threshold():
+            # (Re)open circuit and reset cooldown window
+            entry["opened_at"] = _time.monotonic()
+
+
+def _circuit_reset_for_tests():
+    """Clear all circuit state (used in tests)."""
+    with _circuit_lock:
+        _circuit_state.clear()
 
 
 # ------------------------------------------------------------------ provider protocol
@@ -285,8 +364,10 @@ class IPReputationService:
         Cache flow (after validation, private block):
           - if caching disabled → provider direct
           - else lookup (ip, provider) → if fresh return cached
-          - else call provider → if not unavailable, upsert cache
-        Private IPs never reach provider or cache.
+          - else check circuit breaker → if open return unavailable without provider
+          - else call provider → update circuit, if not unavailable upsert cache
+        Private IPs never reach provider or cache. Circuit is per-provider and
+        process-local (no Redis).
         """
         from ..utils.validators import validate_ip_address, is_private_ip
         # Strict validation
@@ -297,10 +378,10 @@ class IPReputationService:
                 details={"field": "ip"},
             )
         provider = IPReputationService._get_provider()
-        # NullProvider means disabled/unknown → no cache
+        # NullProvider means disabled/unknown → no cache, no circuit
         if provider.provider_name == "unavailable":
             return provider.check_ip(normalized)
-        # Attempt cache lookup (handles enabled check internally)
+        # Attempt cache lookup (handles enabled check internally) — bypasses circuit
         try:
             from .ip_reputation_cache_service import IPReputationCacheService
             cached = IPReputationCacheService.get(normalized, provider.provider_name)
@@ -309,7 +390,25 @@ class IPReputationService:
         except Exception:
             # Cache must never break provider flow
             pass
+        # Circuit breaker: if open and in cooldown, fail fast without external call
+        if _circuit_should_block(provider.provider_name):
+            return ReputationResult(
+                ip=normalized,
+                reputation="unavailable",
+                confidence="none",
+                provider=provider.provider_name,
+                checked_at=_now_iso(),
+                reason="circuit_open",
+            )
         result = provider.check_ip(normalized)
+        # Update circuit state based on transport failure vs normal result
+        try:
+            if _circuit_is_failure(result):
+                _circuit_record_failure(provider.provider_name)
+            else:
+                _circuit_record_success(provider.provider_name)
+        except Exception:
+            pass
         try:
             from .ip_reputation_cache_service import IPReputationCacheService
             IPReputationCacheService.put(result)
