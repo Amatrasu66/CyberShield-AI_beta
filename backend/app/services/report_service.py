@@ -296,6 +296,21 @@ def _map_port_scan(row):
             normalized_threat["score"] = max(0, min(100, int(normalized_threat.get("score", 0))))
         except Exception:
             normalized_threat["score"] = 0
+    # threat_intelligence may be None for old scans
+    threat_intel_raw = row.get("threat_intelligence")
+    normalized_intel = None
+    if isinstance(threat_intel_raw, dict) and threat_intel_raw.get("providers"):
+        allowed_provider = {"provider", "status", "reputation", "confidence", "threat_score", "visitor_type", "visitor_type_name", "days_since_activity", "last_seen", "reason", "checked_at", "malicious", "suspicious", "categories", "evidence", "raw", "ip"}
+        sanitized_providers = []
+        for p in threat_intel_raw.get("providers", []):
+            if isinstance(p, dict):
+                sanitized_providers.append({k: (str(v)[:256] if isinstance(v, str) and len(str(v)) > 256 else v) for k, v in p.items() if k in allowed_provider})
+        normalized_intel = {
+            "ip": str(threat_intel_raw.get("ip") or row.get("resolved_ip") or "")[:45],
+            "checked_at": str(threat_intel_raw.get("checked_at") or "")[:64],
+            "providers": sanitized_providers,
+            "summary": {k: v for k, v in (threat_intel_raw.get("summary") or {}).items() if k in {"overall_reputation", "malicious", "suspicious", "sources_checked", "sources_available", "last_seen", "evidence_confidence"}},
+        }
     return {
         "target": row.get("target"),
         "resolved_ip": row.get("resolved_ip"),
@@ -310,6 +325,7 @@ def _map_port_scan(row):
         "created_at": row.get("created_at"),
         "ip_reputation": normalized_rep,
         "threat_assessment": normalized_threat,
+        "threat_intelligence": normalized_intel,
         "summary": f"Scanned {row.get('ports_scanned')} ports: {open_count} open, {closed_count} closed, {filtered_count} filtered.",
     }
 

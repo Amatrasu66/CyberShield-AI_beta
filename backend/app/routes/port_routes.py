@@ -69,6 +69,7 @@ def scan_ports():
         "risk_level": result.risk_level,
         "ip_reputation": result.ip_reputation,
         "threat_assessment": result.threat_assessment,
+        "threat_intelligence": getattr(result, "threat_intelligence", None),
     }
 
     return success_response(result_dict, "Port scan completed")
@@ -167,3 +168,22 @@ def post_ip_reputation():
         return success_response(result.to_dict(), "IP reputation check completed")
 
     raise ValidationError("Provide 'ip' or 'target' in request body", details={"field": "ip/target"})
+
+
+@port_bp.get("/threat-intelligence/<path:ip>")
+@require_auth
+@rate_limit("ip_reputation")
+def get_threat_intelligence(ip: str):
+    """Retrieve multi-provider threat intelligence for a single IP."""
+    from ..utils.validators import validate_ip_address, is_private_ip
+    from ..services.threat_intelligence_service import ThreatIntelligenceService
+
+    ip = (ip or "").strip()
+    normalized = validate_ip_address(ip)
+    if is_private_ip(normalized):
+        raise ValidationError(
+            "Private or reserved IP addresses cannot be checked for threat intelligence",
+            details={"field": "ip"},
+        )
+    bundle = ThreatIntelligenceService.check_ip(normalized)
+    return success_response(bundle, "Threat intelligence check completed")

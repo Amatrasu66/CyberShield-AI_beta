@@ -120,6 +120,12 @@ class Config:
     IP_REPUTATION_CACHE_ENABLED = _env_bool("IP_REPUTATION_CACHE_ENABLED", True)
     IP_REPUTATION_CACHE_TTL = _env_int("IP_REPUTATION_CACHE_TTL", 86400)
 
+    # --- Threat Intelligence (multi-provider) ---------------------------------
+    THREAT_INTELLIGENCE_ENABLED = _env_bool("THREAT_INTELLIGENCE_ENABLED", False)
+    PROJECT_HONEYPOT_ENABLED = _env_bool("PROJECT_HONEYPOT_ENABLED", False)
+    PROJECT_HONEYPOT_ACCESS_KEY = os.environ.get("PROJECT_HONEYPOT_ACCESS_KEY", "").strip()
+    PROJECT_HONEYPOT_TIMEOUT = _env_int("PROJECT_HONEYPOT_TIMEOUT", 3)
+
     # --- Input limits -----------------------------------------------------
     PASSWORD_MAX_LENGTH = _env_int("PASSWORD_MAX_LENGTH", 4096)
     EMAIL_MAX_LENGTH = _env_int("EMAIL_MAX_LENGTH", 50_000)

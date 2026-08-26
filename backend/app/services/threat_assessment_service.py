@@ -273,6 +273,135 @@ class ThreatAssessmentService:
         }
 
     @staticmethod
+    def assess_with_intelligence(
+        port_risk: str,
+        bundle: Optional[dict],
+        open_ports: Optional[list] = None,
+        ports_scanned: Optional[int] = None,
+        status: str = "completed",
+    ) -> dict:
+        """Assess using multi-provider threat intelligence bundle.
+
+        Falls back to single-ip path if bundle is None/empty.
+        Deterministic: derives single ip_base from worst_of(providers) to avoid double-count.
+        """
+        if not isinstance(bundle, dict) or not bundle.get("providers"):
+            # No intelligence — treat as unavailable
+            return ThreatAssessmentService.assess(port_risk, None, open_ports, ports_scanned, status)
+
+        providers = bundle.get("providers") or []
+        # Filter unavailable
+        usable = [p for p in providers if isinstance(p, dict) and p.get("reputation") != "unavailable"]
+        if not usable:
+            # All unavailable -> treat as unavailable for scoring but keep medium confidence
+            return ThreatAssessmentService.assess(port_risk, {"reputation": "unavailable", "reason": "all_providers_unavailable"}, open_ports, ports_scanned, status)
+
+        # Worst-of ranking
+        rank = {"malicious": 3, "suspicious": 2, "clean": 1, "unknown": 0}
+        worst = max(usable, key=lambda p: rank.get(str(p.get("reputation", "unknown")).lower(), -1))
+        derived_rep = str(worst.get("reputation", "unknown")).lower()
+        if derived_rep not in IP_BASE:
+            derived_rep = "unknown"
+
+        # Build synthetic ip_reputation for base scoring (keep reports from abuse, threat from honeypot)
+        synthetic = {
+            "reputation": derived_rep,
+            "confidence": worst.get("confidence") or "none",
+            "reports": 0,
+            "threat_score": None,
+            "days_since_activity": None,
+            "provider": "threat_intelligence",
+        }
+        # Collect strongest signals for modifier
+        max_reports = 0
+        max_threat = 0
+        min_days = None
+        honeypot_categories = []
+        for p in providers:
+            if not isinstance(p, dict):
+                continue
+            # reports from abuse
+            try:
+                r = int(p.get("reports") or (p.get("evidence") or {}).get("reports") or 0)
+                if r > max_reports:
+                    max_reports = r
+            except Exception:
+                pass
+            # threat from honeypot
+            try:
+                ev = p.get("evidence") or {}
+                t = p.get("threat_score") if p.get("threat_score") is not None else ev.get("threat_score")
+                if t is not None:
+                    t = int(t)
+                    if t > max_threat:
+                        max_threat = t
+            except Exception:
+                pass
+            # days
+            try:
+                ev2 = p.get("evidence") or {}
+                d = p.get("days_since_activity") if p.get("days_since_activity") is not None else ev2.get("days_since_activity")
+                if d is not None:
+                    d = int(d)
+                    if min_days is None or d < min_days:
+                        min_days = d
+            except Exception:
+                pass
+            # categories
+            cats = p.get("categories") or (p.get("evidence") or {}).get("visitor_type_flags") or []
+            for c in cats:
+                if c not in honeypot_categories:
+                    honeypot_categories.append(c)
+        synthetic["reports"] = max_reports
+        synthetic["threat_score"] = max_threat if max_threat else None
+        synthetic["days_since_activity"] = min_days
+        synthetic["honeypot_categories"] = honeypot_categories
+        synthetic["worst_provider"] = worst.get("provider")
+
+        # Call base assess with synthetic, but expand high_report_volume to include honeypot corroboration
+        # We need to avoid double counting: strong_corroboration is single +5
+        result = ThreatAssessmentService.assess(port_risk, synthetic, open_ports, ports_scanned, status)
+
+        # Post-process: if honeypot showed high threat fresh, ensure factor reflects intelligence
+        # The base assess already handled reports>=10. If honeypot threat>=70 and days<=30 and suspicious/malicious, add strong_corroboration if not already added
+        has_high_report = any(f.get("type") == "high_report_volume" for f in result.get("factors", []))
+        if not has_high_report and derived_rep in ("suspicious", "malicious"):
+            try:
+                if max_threat >= 70 and (min_days is None or min_days <= 30):
+                    # Add unified strong_corroboration but keep weight 5, avoid double count
+                    # Only if not already counted via reports
+                    result["score"] = min(100, result["score"] + 5)
+                    result["level"] = _level_for_score(result["score"])
+                    result["factors"].append({
+                        "type": "high_report_volume",
+                        "weight": 5,
+                        "description": f"High threat evidence (honeypot threat {max_threat}, {min_days}d ago)" if min_days is not None else f"High threat evidence (honeypot threat {max_threat})",
+                    })
+                    # Update explanation to include new score
+                    # Rebuild explanation suffix
+                    result["explanation"] = result["explanation"].replace(f" → {result['score']-5} ", f" → {result['score']} ").replace(f" → {result['score']-5}", f" → {result['score']}")
+                    if "modifiers" not in result["explanation"] and " → " in result["explanation"]:
+                        pass
+            except Exception:
+                pass
+
+        # Add honeypot context to explanation if derived from honeypot
+        if worst.get("provider") == "project_honeypot" and derived_rep in ("suspicious", "malicious"):
+            # Append honeypot evidence note to factors if not already
+            cats_str = ", ".join(honeypot_categories) if honeypot_categories else "honeypot"
+            # Ensure factor description reflects source
+            for f in result["factors"]:
+                if f.get("type") in ("suspicious_ip", "malicious_ip"):
+                    # Enhance description to mention honeypot
+                    if "honeypot" not in f["description"].lower() and "project" not in f["description"].lower():
+                        f["description"] = f"{f['description']} — Project Honey Pot {cats_str} (threat {max_threat})"
+
+        # Ensure deterministic factor ordering for test stability
+        # Keep base order but sort modifiers for determinism already in assess; we added factor at end — ok
+
+        return result
+
+    @staticmethod
     def assess_from_scan(scan_result) -> dict:
         """Convenience for ScanResult dataclass or dict."""
         # Extract fields handling both dict and dataclass
@@ -281,6 +410,13 @@ class ThreatAssessmentService:
                 return obj.get(key, default)
             return getattr(obj, key, default)
         port_risk = _get(scan_result, "risk_level", "low")
+        # Prefer intelligence bundle if present
+        bundle = _get(scan_result, "threat_intelligence")
+        if isinstance(bundle, dict) and bundle.get("providers"):
+            open_ports = _get(scan_result, "open_ports", [])
+            ports_scanned = _get(scan_result, "ports_scanned")
+            status = _get(scan_result, "status", "completed")
+            return ThreatAssessmentService.assess_with_intelligence(port_risk, bundle, open_ports, ports_scanned, status)
         ip_rep = _get(scan_result, "ip_reputation")
         open_ports = _get(scan_result, "open_ports", [])
         ports_scanned = _get(scan_result, "ports_scanned")

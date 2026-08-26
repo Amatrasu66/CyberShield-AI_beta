@@ -262,6 +262,7 @@ export interface ReportPortScanData {
   readonly created_at: string | null;
   readonly ip_reputation: IPReputationResult | null;
   readonly threat_assessment: ThreatAssessment | null;
+  readonly threat_intelligence?: ThreatIntelligenceBundle | null;
   readonly summary: string | null;
 }
 
@@ -380,6 +381,45 @@ export interface ThreatAssessment {
   readonly assessed_at: string;
 }
 
+export interface ProviderEvidence {
+  readonly provider: string;
+  readonly status: 'available' | 'unknown' | 'unavailable';
+  readonly reputation: IPReputationState;
+  readonly confidence: string | null;
+  readonly threat_score?: number | null;
+  readonly visitor_type?: number | null;
+  readonly visitor_type_name?: string | null;
+  readonly days_since_activity?: number | null;
+  readonly last_seen?: string | null;
+  readonly reason?: string | null;
+  readonly checked_at: string;
+  readonly malicious: boolean;
+  readonly suspicious: boolean;
+  readonly categories?: readonly string[];
+  readonly evidence?: Record<string, unknown> | null;
+  readonly raw?: Record<string, unknown> | null;
+  readonly ip: string;
+}
+
+export interface ThreatIntelligenceBundle {
+  readonly ip: string;
+  readonly checked_at: string;
+  readonly providers: readonly ProviderEvidence[];
+  readonly available_providers: number;
+  readonly sources_checked: number;
+  readonly sources_available: number;
+  readonly confidence: string;
+  readonly summary: {
+    readonly overall_reputation: IPReputationState;
+    readonly evidence_confidence: string;
+    readonly malicious: boolean;
+    readonly suspicious: boolean;
+    readonly sources_checked: number;
+    readonly sources_available: number;
+    readonly last_seen: string | null;
+  };
+}
+
 export interface PortScanResult {
   readonly target: string;
   readonly resolved_ip: string;
@@ -392,6 +432,7 @@ export interface PortScanResult {
   readonly risk_level: 'low' | 'medium' | 'high' | 'critical';
   readonly ip_reputation?: IPReputationResult | null;
   readonly threat_assessment?: ThreatAssessment | null;
+  readonly threat_intelligence?: ThreatIntelligenceBundle | null;
 }
 
 export interface PortScanRequest {
@@ -413,6 +454,7 @@ export interface PortScanHistoryItem {
   readonly created_at: string;
   readonly ip_reputation?: IPReputationResult | null;
   readonly threat_assessment?: ThreatAssessment | null;
+  readonly threat_intelligence?: ThreatIntelligenceBundle | null;
 }
 
 export interface PortScanHistoryMeta {
@@ -441,4 +483,5 @@ export interface PortScanDetail {
   readonly created_at: string;
   readonly ip_reputation?: IPReputationResult | null;
   readonly threat_assessment?: ThreatAssessment | null;
+  readonly threat_intelligence?: ThreatIntelligenceBundle | null;
 }

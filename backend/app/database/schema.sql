@@ -137,6 +137,47 @@ BEGIN
     ) THEN
         ALTER TABLE port_scans ADD COLUMN threat_assessment JSONB;
     END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'port_scans' AND column_name = 'threat_intelligence'
+    ) THEN
+        ALTER TABLE port_scans ADD COLUMN threat_intelligence JSONB;
+    END IF;
+END $$;
+
+-- Backfill for ip_reputation_cache extension for Project Honey Pot
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'ip_reputation_cache' AND column_name = 'evidence'
+    ) THEN
+        ALTER TABLE ip_reputation_cache ADD COLUMN evidence JSONB;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'ip_reputation_cache' AND column_name = 'threat_score'
+    ) THEN
+        ALTER TABLE ip_reputation_cache ADD COLUMN threat_score INT;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'ip_reputation_cache' AND column_name = 'visitor_type'
+    ) THEN
+        ALTER TABLE ip_reputation_cache ADD COLUMN visitor_type INT;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'ip_reputation_cache' AND column_name = 'days_since_activity'
+    ) THEN
+        ALTER TABLE ip_reputation_cache ADD COLUMN days_since_activity INT;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'ip_reputation_cache' AND column_name = 'last_seen'
+    ) THEN
+        ALTER TABLE ip_reputation_cache ADD COLUMN last_seen TIMESTAMPTZ;
+    END IF;
 END $$;
 
 -- ============================================================================

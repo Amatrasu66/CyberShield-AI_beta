@@ -510,8 +510,38 @@ class PDFReportGenerator:
                     STYLE_NOTE,
                 ))
 
+            # Project Honey Pot / HTTP:BL subsection — distinct evidence
+            story.append(Paragraph("Project Honey Pot — HTTP:BL (independent from port risk and AbuseIPDB)", STYLE_H2))
+            hp_ev = None
+            ti = scan.get("threat_intelligence")
+            if isinstance(ti, dict) and ti.get("providers"):
+                for p in ti["providers"]:
+                    if isinstance(p, dict) and p.get("provider") == "project_honeypot":
+                        hp_ev = p
+                        break
+            if not isinstance(hp_ev, dict) or not hp_ev:
+                story.append(Paragraph("Not available — this scan was created before Project Honey Pot was enabled, the IP was not checked via HTTP:BL, or no evidence was returned (UNKNOWN ≠ CLEAN).", STYLE_NOTE))
+            else:
+                story.append(cls._kv_table([
+                    ("IP Address", _first(hp_ev, "ip", default="—")),
+                    ("Reputation", _first(hp_ev, "reputation", default="—")),
+                    ("Confidence", _first(hp_ev, "confidence", default="—")),
+                    ("Status", _first(hp_ev, "status", default="—")),
+                    ("Threat Score", _first(hp_ev, "threat_score", default="—")),
+                    ("Visitor Type", _first(hp_ev, "visitor_type_name", default=_first(hp_ev, "visitor_type", default="—"))),
+                    ("Days Since Activity", _first(hp_ev, "days_since_activity", default="—")),
+                    ("Last Seen", _fmt_date(_first(hp_ev, "last_seen")) or "—"),
+                    ("Reason", _first(hp_ev, "reason", default="—")),
+                    ("Provider", _first(hp_ev, "provider", default="—")),
+                    ("Checked At", _fmt_date(_first(hp_ev, "checked_at")) or "—"),
+                ]))
+                story.append(Paragraph(
+                    "Note: Project Honey Pot evidence is DNS-based HTTP:BL; UNKNOWN does not mean CLEAN, UNAVAILABLE does not mean CLEAN. Threat Score 0-255 and Visitor Type are independent from AbuseIPDB.",
+                    STYLE_NOTE,
+                ))
+
             # Overall Threat Assessment — derived, keep distinct from Port Risk and IP Reputation
-            story.append(Paragraph("Overall Threat Assessment — Derived from Port Risk + IP Reputation", STYLE_H2))
+            story.append(Paragraph("Overall Threat Assessment — Derived by CyberShield", STYLE_H2))
             threat = scan.get("threat_assessment")
             if not isinstance(threat, dict) or not threat:
                 story.append(Paragraph("Not available — this scan was created before overall threat assessment was enabled.", STYLE_NOTE))
@@ -528,7 +558,7 @@ class PDFReportGenerator:
                     story.append(Paragraph("Contributing Factors", STYLE_H2))
                     story.append(cls._threat_factors_table(factors))
                 story.append(Paragraph(
-                    "Note: Overall threat amplifies independent signals; Port Risk and IP Reputation remain separate. No fake precision.",
+                    "Note: Overall threat is derived by CyberShield from port risk and multi-provider evidence (AbuseIPDB + Project Honey Pot). Provider results are independent evidence; UNKNOWN/UNAVAILABLE are not CLEAN.",
                     STYLE_NOTE,
                 ))
         return story

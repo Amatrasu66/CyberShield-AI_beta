@@ -70,6 +70,7 @@ class ScanResult:
     risk_level: str  # "low" | "medium" | "high" | "critical"
     ip_reputation: Optional[dict] = None
     threat_assessment: Optional[dict] = None
+    threat_intelligence: Optional[dict] = None
 
 
 class PortScannerService:
@@ -198,17 +199,48 @@ class PortScannerService:
             # Never let reputation break the scan
             pass
 
-        # Threat assessment (derived, never breaks scan)
+        # Threat intelligence bundle (multi-provider, never breaks scan)
+        threat_intelligence: Optional[dict] = None
+        try:
+            if resolved_ip:
+                try:
+                    import ipaddress as _ipaddr2
+                    _parsed2 = _ipaddr2.ip_address(resolved_ip)
+                    is_ip2 = True
+                except ValueError:
+                    is_ip2 = False
+                if is_ip2:
+                    try:
+                        from .threat_intelligence_service import ThreatIntelligenceService
+                        threat_intelligence = ThreatIntelligenceService.check_ip(resolved_ip)
+                    except ValidationError:
+                        # Private IP blocked — keep ip_reputation unavailable already, intelligence unavailable
+                        pass
+                    except Exception:
+                        threat_intelligence = None
+        except Exception:
+            threat_intelligence = None
+
+        # Threat assessment (derived, never breaks scan) — prefer intelligence bundle if available
         threat_assessment: Optional[dict] = None
         try:
             from .threat_assessment_service import ThreatAssessmentService
-            threat_assessment = ThreatAssessmentService.assess(
-                port_risk=risk_level,
-                ip_reputation=ip_reputation,
-                open_ports=open_ports,
-                ports_scanned=len(port_list),
-                status="completed",
-            )
+            if threat_intelligence is not None:
+                threat_assessment = ThreatAssessmentService.assess_with_intelligence(
+                    port_risk=risk_level,
+                    bundle=threat_intelligence,
+                    open_ports=open_ports,
+                    ports_scanned=len(port_list),
+                    status="completed",
+                )
+            else:
+                threat_assessment = ThreatAssessmentService.assess(
+                    port_risk=risk_level,
+                    ip_reputation=ip_reputation,
+                    open_ports=open_ports,
+                    ports_scanned=len(port_list),
+                    status="completed",
+                )
         except Exception:
             threat_assessment = None
 
@@ -224,6 +256,7 @@ class PortScannerService:
             risk_level=risk_level,
             ip_reputation=ip_reputation,
             threat_assessment=threat_assessment,
+            threat_intelligence=threat_intelligence,
         )
 
         # Persist completed scan for authenticated user
@@ -562,6 +595,7 @@ class PortScannerService:
             "status": "completed",
             "ip_reputation": result.ip_reputation,
             "threat_assessment": result.threat_assessment,
+            "threat_intelligence": getattr(result, "threat_intelligence", None),
         }
 
         try:
@@ -630,7 +664,7 @@ class PortScannerService:
                 client.table("port_scans")
                 .select(
                     "id, target, resolved_ip, ports_scanned, open_ports, "
-                    "scan_duration_ms, risk_level, status, ip_reputation, threat_assessment, created_at"
+                    "scan_duration_ms, risk_level, status, ip_reputation, threat_assessment, threat_intelligence, created_at"
                 )
                 .eq("user_id", user_id)
                 .order("created_at", desc=True)

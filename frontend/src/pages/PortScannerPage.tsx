@@ -5,7 +5,7 @@ import { Badge, Button, Card, DataTable } from '../components/ui';
 import { apiClient, ApiClientError } from '../services/apiClient';
 import { useSlowRequest } from '../hooks/useSlowRequest';
 import { SlowRequestNotice } from '../components/SlowRequestNotice';
-import type { PortScanResult, PortScanRequest, PortScanHistoryItem, PortScanDetail, IPReputationResult, ThreatAssessment } from '../types';
+import type { PortScanResult, PortScanRequest, PortScanHistoryItem, PortScanDetail, IPReputationResult, ThreatAssessment, ProviderEvidence, ThreatIntelligenceBundle } from '../types';
 
 const QUICK_SCAN_PORTS = [21, 22, 23, 25, 53, 80, 110, 111, 135, 139, 143, 443, 445, 993, 995, 1723, 3306, 3389, 5432, 8080];
 const COMMON_SCAN_PORTS = [
@@ -145,6 +145,87 @@ function IPReputationCard({ reputation, titleEyebrow }: { reputation: IPReputati
       {reputation.reason && isUnavailable && (
         <p className="mt-4 text-xs font-mono text-on-surface-variant/70">Reason: {reputation.reason}</p>
       )}
+    </Card>
+  );
+}
+
+function ThreatIntelligenceCard({ bundle, titleEyebrow }: { bundle: ThreatIntelligenceBundle | null | undefined; titleEyebrow?: string }) {
+  if (!bundle || !bundle.providers || bundle.providers.length === 0) {
+    return (
+      <Card className="p-5">
+        <p className="eyebrow mb-2">{titleEyebrow ?? 'Threat intelligence — multi-provider evidence'}</p>
+        <p className="text-xs font-mono uppercase tracking-wide text-on-surface-variant">Independent evidence from enabled providers</p>
+        <div className="flex items-start gap-3 rounded border bg-surface-low p-4 mt-4">
+          <HelpCircle size={18} className="mt-0.5 text-on-surface-variant" />
+          <div>
+            <p className="text-sm font-medium text-on-surface">No threat intelligence available for this scan.</p>
+            <p className="mt-1 text-sm leading-6 text-on-surface-variant">This scan was created before threat intelligence was enabled or no providers were checked. UNKNOWN ≠ CLEAN.</p>
+          </div>
+        </div>
+      </Card>
+    );
+  }
+  const overall = bundle.summary?.overall_reputation ?? 'unknown';
+  return (
+    <Card className="p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="eyebrow mb-2">{titleEyebrow ?? 'Threat intelligence — multi-provider evidence'}</p>
+          <p className="text-xs font-mono uppercase tracking-wide text-on-surface-variant">Evidence, not verdict — providers are independent</p>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <p className="font-display text-2xl font-bold">{overall.toUpperCase()}</p>
+            <ReputationBadge reputation={overall as IPReputationResult['reputation']} />
+            <Badge tone="primary"><Activity size={12} className="mr-1" />{bundle.sources_available}/{bundle.sources_checked} providers</Badge>
+          </div>
+          <p className="mt-2 text-sm text-on-surface-variant">
+            Overall {overall} · Evidence confidence {bundle.summary?.evidence_confidence ?? bundle.confidence} · Checked {bundle.checked_at ? formatDate(bundle.checked_at) : '—'}
+          </p>
+          <p className="mt-1 text-xs text-on-surface-variant/70">UNKNOWN does not mean CLEAN · UNAVAILABLE does not mean CLEAN · HoneyPot uses DNS HTTP:BL, not scraping</p>
+        </div>
+      </div>
+
+      <div className="mt-6 space-y-3">
+        {bundle.providers.map((p: ProviderEvidence) => (
+          <div key={p.provider} className="rounded border bg-surface-low p-4">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-medium uppercase tracking-wide text-on-surface-variant flex items-center gap-2"><Globe size={14} /> {p.provider}</p>
+              <div className="flex items-center gap-2">
+                <ReputationBadge reputation={p.reputation} />
+                {p.confidence && p.confidence !== 'none' && <ConfidenceBadge confidence={p.confidence} />}
+                <Badge tone={p.status === 'available' ? 'success' : p.status === 'unknown' ? 'primary' : 'warning'}>{p.status}</Badge>
+              </div>
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4 text-sm">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-on-surface-variant">Reputation</p>
+                <p className="font-mono font-semibold">{p.reputation}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-on-surface-variant">Confidence</p>
+                <p className="font-mono font-semibold">{p.confidence ?? '—'}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-on-surface-variant">Threat score</p>
+                <p className="font-mono font-semibold">{String(p.threat_score ?? (p.evidence as Record<string, unknown> | null)?.threat_score ?? '—')}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-on-surface-variant">Days since activity / Last seen</p>
+                <p className="font-mono font-semibold">{String(p.days_since_activity ?? (p.evidence as Record<string, unknown> | null)?.days_since_activity ?? '—')} {p.last_seen ? `· ${formatDate(p.last_seen)}` : ''}</p>
+              </div>
+            </div>
+            {(p.visitor_type !== null && p.visitor_type !== undefined) || (p.visitor_type_name) ? (
+              <div className="mt-2 text-sm">
+                <p className="text-xs uppercase tracking-wide text-on-surface-variant">Visitor type</p>
+                <p className="font-mono">{p.visitor_type_name ?? p.visitor_type} {p.categories && p.categories.length ? `· ${p.categories.join(', ')}` : ''}</p>
+              </div>
+            ) : null}
+            {p.reason && (
+              <p className="mt-2 text-xs font-mono text-on-surface-variant/70">Reason: {p.reason}</p>
+            )}
+            <p className="mt-1 text-xs font-mono text-on-surface-variant/70">Checked: {p.checked_at ? formatDate(p.checked_at) : '—'} · Evidence</p>
+          </div>
+        ))}
+      </div>
     </Card>
   );
 }
@@ -560,8 +641,9 @@ export function PortScannerPage() {
 
           {result && (
             <>
-              <IPReputationCard reputation={result.ip_reputation ?? null} titleEyebrow="IP reputation — independent from port risk" />
-              <ThreatAssessmentCard assessment={result.threat_assessment ?? null} titleEyebrow="Overall threat — derived from port risk + IP reputation" />
+              <IPReputationCard reputation={result.ip_reputation ?? null} titleEyebrow="IP reputation — AbuseIPDB evidence" />
+              <ThreatIntelligenceCard bundle={result.threat_intelligence ?? null} titleEyebrow="Threat intelligence — multi-provider evidence" />
+              <ThreatAssessmentCard assessment={result.threat_assessment ?? null} titleEyebrow="Overall threat — derived by CyberShield" />
               <Card className="mt-5">
                 <div className="border-b px-5 py-4">
                   <p className="font-display font-semibold flex items-center gap-2">
@@ -784,7 +866,11 @@ export function PortScannerPage() {
               </Card>
 
               <div className="mt-5">
-                <IPReputationCard reputation={detail.ip_reputation ?? null} titleEyebrow="Historical IP reputation" />
+                <IPReputationCard reputation={detail.ip_reputation ?? null} titleEyebrow="Historical IP reputation (AbuseIPDB)" />
+              </div>
+
+              <div className="mt-5">
+                <ThreatIntelligenceCard bundle={detail.threat_intelligence ?? null} titleEyebrow="Historical threat intelligence" />
               </div>
 
               <div className="mt-5">

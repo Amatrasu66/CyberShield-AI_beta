@@ -138,8 +138,9 @@ class IPReputationCacheService:
 
     @staticmethod
     def get(ip: str, provider: str):
-        """Return cached ReputationResult if fresh else None.
+        """Return cached result if fresh else None.
 
+        Supports both ReputationResult (abuseipdb) and ProviderEvidence (project_honeypot).
         Never raises; returns None on miss/expired/unavailable.
         """
         if not _cache_enabled():
@@ -176,7 +177,45 @@ class IPReputationCacheService:
                 _log_safe("cache_expired", extra={"ip": ip, "provider": provider, "expired": True})
                 return None
             _log_safe("cache_hit", extra={"ip": ip, "provider": provider})
-            # Convert to ReputationResult
+            # If row contains evidence JSON (honeypot), return ProviderEvidence
+            if provider == "project_honeypot":
+                try:
+                    from .project_honeypot_provider import ProviderEvidence
+                    evidence = row.get("evidence") if isinstance(row.get("evidence"), dict) else None
+                    # Fallback: build evidence from flat columns
+                    if evidence is None and any(k in row for k in ("threat_score", "visitor_type", "days_since_activity")):
+                        evidence = {
+                            "days_since_activity": row.get("days_since_activity"),
+                            "threat_score": row.get("threat_score"),
+                            "visitor_type": row.get("visitor_type"),
+                            "last_seen": row.get("last_seen"),
+                        }
+                    # If evidence exists, reconstruct ProviderEvidence
+                    if evidence is not None or row.get("reputation") is not None:
+                        # Derive fields from row
+                        raw = evidence.get("raw") if isinstance(evidence, dict) and evidence.get("raw") else {}
+                        return ProviderEvidence(
+                            ip=row.get("ip") or ip,
+                            provider=row.get("provider") or provider,
+                            status=evidence.get("status") if evidence and evidence.get("status") else ("unknown" if row.get("reputation") == "unknown" else "available" if row.get("reputation") in ("suspicious", "malicious") else "unavailable"),
+                            reputation=row.get("reputation") or "unknown",
+                            confidence=row.get("confidence") or "none",
+                            threat_score=evidence.get("threat_score") if evidence and evidence.get("threat_score") is not None else row.get("threat_score"),
+                            visitor_type=evidence.get("visitor_type") if evidence and evidence.get("visitor_type") is not None else row.get("visitor_type"),
+                            visitor_type_name=evidence.get("visitor_type_name") if evidence else None,
+                            days_since_activity=evidence.get("days_since_activity") if evidence and evidence.get("days_since_activity") is not None else row.get("days_since_activity"),
+                            last_seen=evidence.get("last_seen") if evidence and evidence.get("last_seen") else row.get("last_seen"),
+                            reason=row.get("reason") or (evidence.get("reason") if evidence else None),
+                            checked_at=row.get("checked_at"),
+                            raw=raw if raw else evidence,
+                            malicious=bool(row.get("malicious")),
+                            suspicious=bool(row.get("suspicious")),
+                            categories=evidence.get("visitor_type_flags") or evidence.get("categories") or [] if evidence else [],
+                            evidence=evidence,
+                        )
+                except Exception:
+                    pass
+            # Default: Convert to ReputationResult for abuseipdb and legacy
             from .ip_reputation_service import ReputationResult
             return ReputationResult(
                 ip=row.get("ip") or ip,
@@ -203,6 +242,7 @@ class IPReputationCacheService:
     def put(result) -> None:
         """Upsert a fresh result into cache.
 
+        Supports both ReputationResult and ProviderEvidence.
         Skips caching if disabled or result is unavailable or missing fields.
         Uses (ip, provider) unique constraint via upsert.
         """
@@ -234,23 +274,70 @@ class IPReputationCacheService:
                 checked_at_iso = checked_at.isoformat()
             else:
                 checked_at_iso = now.isoformat()
-            payload = {
-                "ip": ip,
-                "reputation": result.reputation,
-                "confidence": result.confidence or "none",
-                "malicious": bool(result.malicious),
-                "suspicious": bool(result.suspicious),
-                "reports": int(result.reports or 0),
-                "country": result.country,
-                "asn": str(result.asn) if result.asn is not None else None,
-                "organization": result.organization,
-                "isp": result.isp,
-                "last_reported_at": result.last_reported_at,
-                "provider": provider,
-                "checked_at": checked_at_iso,
-                "expires_at": expires_at.isoformat(),
-                "updated_at": now.isoformat(),
-            }
+            # Detect ProviderEvidence vs ReputationResult
+            is_evidence = hasattr(result, "threat_score") or provider == "project_honeypot"
+            if is_evidence:
+                # ProviderEvidence payload with extension columns
+                threat_score = getattr(result, "threat_score", None)
+                visitor_type = getattr(result, "visitor_type", None)
+                days_since = getattr(result, "days_since_activity", None)
+                last_seen = getattr(result, "last_seen", None)
+                # evidence JSONB — allowlisted fields only, no secrets
+                raw_evidence = getattr(result, "evidence", None) or getattr(result, "raw", None) or {}
+                if not isinstance(raw_evidence, dict):
+                    raw_evidence = {}
+                # Build bounded evidence JSON
+                evidence_json = {
+                    "days_since_activity": days_since,
+                    "threat_score": threat_score,
+                    "visitor_type": visitor_type,
+                    "visitor_type_name": getattr(result, "visitor_type_name", None),
+                    "visitor_type_flags": getattr(result, "categories", []) or [],
+                    "last_seen": last_seen,
+                    "status": getattr(result, "status", None),
+                    "categories": getattr(result, "categories", []) or [],
+                    "raw": getattr(result, "raw", {}) or {},
+                }
+                payload = {
+                    "ip": ip,
+                    "reputation": result.reputation,
+                    "confidence": result.confidence or "none",
+                    "malicious": bool(getattr(result, "malicious", False)),
+                    "suspicious": bool(getattr(result, "suspicious", False)),
+                    "reports": 0,
+                    "country": None,
+                    "asn": None,
+                    "organization": None,
+                    "isp": None,
+                    "last_reported_at": None,
+                    "provider": provider,
+                    "checked_at": checked_at_iso,
+                    "expires_at": expires_at.isoformat(),
+                    "updated_at": now.isoformat(),
+                    "evidence": evidence_json,
+                    "threat_score": threat_score,
+                    "visitor_type": visitor_type,
+                    "days_since_activity": days_since,
+                    "last_seen": last_seen,
+                }
+            else:
+                payload = {
+                    "ip": ip,
+                    "reputation": result.reputation,
+                    "confidence": result.confidence or "none",
+                    "malicious": bool(result.malicious),
+                    "suspicious": bool(result.suspicious),
+                    "reports": int(result.reports or 0),
+                    "country": result.country,
+                    "asn": str(result.asn) if result.asn is not None else None,
+                    "organization": result.organization,
+                    "isp": result.isp,
+                    "last_reported_at": result.last_reported_at,
+                    "provider": provider,
+                    "checked_at": checked_at_iso,
+                    "expires_at": expires_at.isoformat(),
+                    "updated_at": now.isoformat(),
+                }
             # Try upsert with on_conflict; fake may not support on_conflict param
             success = False
             last_error: Exception | None = None
@@ -319,3 +406,7 @@ def _parse_asn(value):
         return int(s)
     except Exception:
         return None
+
+
+# Alias for threat intelligence naming
+ThreatIntelligenceCacheService = IPReputationCacheService
