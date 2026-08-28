@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { ArrowUpRight, Plus, RefreshCw, ShieldCheck } from 'lucide-react';
+import { ArrowUpRight, Plus, RefreshCw } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Badge, Button, Card, DataTable } from '../components/ui';
 import { NewScanModal } from '../components/NewScanModal';
 import { PageHeader } from '../components/PageHeader';
+import { SecurityActivity } from '../components/SecurityActivity';
 import { apiClient } from '../services/apiClient';
 import { useSlowRequest } from '../hooks/useSlowRequest';
 import { SlowRequestNotice } from '../components/SlowRequestNotice';
@@ -31,11 +32,6 @@ function formatTimestamp(isoString: string | null): string {
 
 function getToneClass(tone: DashboardMetric['tone']): 'success' | 'primary' | 'danger' | 'warning' {
   return tone;
-}
-
-function getMaxTrendValue(values: readonly number[]): number {
-  const max = Math.max(...values, 1);
-  return Math.ceil(max / 10) * 10 || 100;
 }
 
 interface NewScanButtonProps { readonly onClick: () => void; }
@@ -71,8 +67,6 @@ export function DashboardPage({ compact = false }: DashboardPageProps) {
   const metrics = data?.metrics;
   const recentScans = data?.recent_scans ?? [];
   const activity = data?.activity ?? [];
-  const trend = data?.trend;
-  const maxTrend = trend ? getMaxTrendValue(trend.values) : 100;
 
   if (loading) {
     return (
@@ -100,42 +94,10 @@ export function DashboardPage({ compact = false }: DashboardPageProps) {
             </Card>
           ))}
         </div>
-        <div className="mt-5 grid gap-5 xl:grid-cols-[1.6fr_1fr]">
-          <Card className="animate-pulse">
-            <div className="flex items-center justify-between border-b px-5 py-4">
-              <div>
-                <p className="font-display font-semibold">Security activity</p>
-                <p className="mt-1 text-xs text-on-surface-variant">Threat trend across recent scans</p>
-              </div>
-              <div className="h-6 w-20 bg-surface-high rounded" />
-            </div>
-            <div className="h-64 p-5">
-              <div className="flex h-full items-end gap-2">
-                {Array.from({ length: 12 }).map((_, index) => (
-                  <div key={index} className="group flex flex-1 flex-col justify-end">
-                    <div className="h-20 w-full bg-surface-high rounded-t" />
-                    <span className="mt-2 text-center font-mono text-[10px] text-on-surface-variant">
-                      {index + 1}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </Card>
-          <Card className="p-5 animate-pulse">
-            <div className="flex items-center gap-2">
-              <div className="h-5 w-5 bg-surface-high rounded" />
-              <div className="h-6 w-40 bg-surface-high rounded" />
-            </div>
-            <div className="mt-5 space-y-5">
-              {Array.from({ length: 3 }).map((_, index) => (
-                <div key={index} className="flex gap-3">
-                  <div className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-surface-high" />
-                  <div className="h-5 w-64 bg-surface-high rounded" />
-                </div>
-              ))}
-            </div>
-          </Card>
+        <div className="mt-5 grid gap-5 xl:grid-cols-3">
+          <div className="xl:col-span-2">
+            <SecurityActivity activities={[]} loading />
+          </div>
         </div>
         <Card className="mt-5 animate-pulse">
           <div className="flex items-center justify-between border-b px-5 py-4">
@@ -250,70 +212,10 @@ export function DashboardPage({ compact = false }: DashboardPageProps) {
           </Card>
         ))}
       </div>
-      <div className="mt-5 grid gap-5 xl:grid-cols-[1.6fr_1fr]">
-        <Card>
-          <div className="flex items-center justify-between border-b px-5 py-4">
-            <div>
-              <p className="font-display font-semibold">Security activity</p>
-              <p className="mt-1 text-xs text-on-surface-variant">
-                Threat trend across recent scans
-              </p>
-            </div>
-            <Badge tone="success">Protected</Badge>
-          </div>
-          <div className="h-64 p-5">
-            {trend && trend.values.length > 0 ? (
-              <div className="flex h-full items-end gap-2">
-                {trend.values.map((value, index) => (
-                  <div
-                    key={index}
-                    className="group flex flex-1 flex-col justify-end"
-                  >
-                    <div
-                      className="rounded-t bg-primary/70 transition group-hover:bg-primary"
-                      style={{
-                        height: `${(value / maxTrend) * 100}%`,
-                        minHeight: value > 0 ? '4px' : '0',
-                      }}
-                    />
-                    <span className="mt-2 text-center font-mono text-[10px] text-on-surface-variant">
-                      {trend.labels[index]?.slice(5) ?? index + 1}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="h-full flex items-center justify-center text-on-surface-variant">
-                No trend data available
-              </div>
-            )}
-          </div>
-        </Card>
-        <Card className="p-5">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="text-success" size={20} />
-            <p className="font-display font-semibold">Priority activity</p>
-          </div>
-          <div className="mt-5 space-y-5">
-            {activity.length > 0 ? (
-              activity.map((item, index) => (
-                <div key={`${item.message}-${index}`} className="flex gap-3">
-                  <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary" />
-                  <p className="text-sm leading-5 text-on-surface-variant">
-                    {item.message}
-                    <span className="mt-1 block font-mono text-[10px] uppercase text-on-surface-variant/60">
-                      {formatTimestamp(item.created_at)}
-                    </span>
-                  </p>
-                </div>
-              ))
-            ) : (
-              <p className="text-center text-on-surface-variant py-8">
-                No recent activity
-              </p>
-            )}
-          </div>
-        </Card>
+      <div className="mt-5 grid gap-5 xl:grid-cols-3">
+        <div className="xl:col-span-2">
+          <SecurityActivity activities={activity} onRetry={fetchDashboard} />
+        </div>
       </div>
       <Card className="mt-5">
         <div className="flex items-center justify-between border-b px-5 py-4">

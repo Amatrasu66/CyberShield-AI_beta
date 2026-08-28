@@ -67,6 +67,16 @@ export interface DashboardRecentScan {
 export interface DashboardActivity {
   readonly message: string;
   readonly created_at: string | null;
+  readonly target?: string | null;
+  readonly type?: string | null;
+  readonly risk_level?: string | null;
+  readonly status?: string | null;
+  readonly resolved_ip?: string | null;
+  readonly ports_scanned?: number | null;
+  readonly open_port_count?: number | null;
+  readonly threat_assessment?: ThreatAssessment | null;
+  readonly ip_reputation?: IPReputationResult | null;
+  readonly threat_intelligence?: ThreatIntelligenceBundle | null;
 }
 
 export interface DashboardTrend {

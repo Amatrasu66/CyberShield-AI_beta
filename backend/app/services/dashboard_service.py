@@ -21,6 +21,10 @@ from ..middleware.auth_middleware import get_current_access_token
 
 SCAN_TABLES = ("website_scans", "email_scans", "password_scans", "log_scans")
 
+# Port scans are persisted separately but feed the same dashboard signals
+PORT_SCAN_TABLE = "port_scans"
+ALL_SCAN_TABLES = SCAN_TABLES + (PORT_SCAN_TABLE,)
+
 RECENT_SCANS_LIMIT = 10
 ACTIVITY_LIMIT = 10
 TREND_DAYS = 12
@@ -103,9 +107,9 @@ def _security_score(website_rows: list) -> dict:
 
 
 def _scans_completed_all_tables(rows_by_table: dict) -> list:
-    """Flatten scan rows across the four scan tables."""
+    """Flatten scan rows across all scan tables (including port scans)."""
     rows = []
-    for table in SCAN_TABLES:
+    for table in ALL_SCAN_TABLES:
         rows.extend(rows_by_table.get(table) or [])
     return rows
 
@@ -128,7 +132,7 @@ def _scans_completed(rows_by_table: dict, week_start=None) -> dict:
 
 def _is_threat(table: str, row: dict) -> bool:
     """Whether a scan row represents a genuinely risky result."""
-    if table in ("website_scans", "email_scans", "log_scans"):
+    if table in ("website_scans", "email_scans", "log_scans", PORT_SCAN_TABLE):
         return row.get("risk_level") in THREAT_RISK_LEVELS
     if table == "password_scans":
         breached = bool(row.get("breached"))
@@ -140,7 +144,7 @@ def _is_threat(table: str, row: dict) -> bool:
 
 def _threats_detected(rows_by_table: dict) -> dict:
     threats = 0
-    for table in SCAN_TABLES:
+    for table in ALL_SCAN_TABLES:
         for row in rows_by_table.get(table) or []:
             if _is_threat(table, row):
                 threats += 1
@@ -188,6 +192,9 @@ def _normalize_scan(table: str, row: dict) -> dict:
     elif table == "password_scans":
         target = "Password analysis"
         scan_type = "Password analysis"
+    elif table == PORT_SCAN_TABLE:
+        target = row.get("target") or row.get("resolved_ip") or "Security scan"
+        scan_type = "Security scan"
     else:  # log_scans
         target = "Log analysis"
         scan_type = "Log analysis"
@@ -201,7 +208,7 @@ def _normalize_scan(table: str, row: dict) -> dict:
 
 def _recent_scans(rows_by_table: dict) -> list:
     items = []
-    for table in SCAN_TABLES:
+    for table in ALL_SCAN_TABLES:
         for row in rows_by_table.get(table) or []:
             items.append(_normalize_scan(table, row))
     items.sort(
@@ -220,23 +227,78 @@ def _activity_scan_message(table: str, row: dict) -> str:
         return "Email analysis completed"
     if table == "password_scans":
         return "Password analysis completed"
+    if table == PORT_SCAN_TABLE:
+        target = row.get("target") or row.get("resolved_ip") or "a target"
+        status = row.get("status")
+        if status == "failed":
+            return f"Security scan failed for {target}"
+        return f"Security scan completed for {target}"
     return "Log analysis completed"
 
 
 def _activity(rows_by_table: dict, report_rows: list) -> list:
     items = []
-    for table in SCAN_TABLES:
+    for table in ALL_SCAN_TABLES:
         for row in rows_by_table.get(table) or []:
-            items.append(
-                {
-                    "message": _activity_scan_message(table, row),
-                    "created_at": row.get("created_at"),
-                }
-            )
+            base = {
+                "message": _activity_scan_message(table, row),
+                "created_at": row.get("created_at"),
+                "target": row.get("target_url") or row.get("target") or row.get("subject") or None,
+                "type": "port_scan" if table == PORT_SCAN_TABLE else table,
+                "risk_level": row.get("risk_level"),
+                "status": row.get("status"),
+            }
+            # Enrich port scans with real security signals — never fabricate defaults
+            if table == PORT_SCAN_TABLE:
+                base["resolved_ip"] = row.get("resolved_ip")
+                base["ports_scanned"] = row.get("ports_scanned")
+                base["open_port_count"] = None
+                open_ports = row.get("open_ports")
+                if isinstance(open_ports, list):
+                    base["open_port_count"] = sum(1 for p in open_ports if isinstance(p, dict) and p.get("state") == "open")
+                # Pass through structured security fields as stored (may be None)
+                base["threat_assessment"] = row.get("threat_assessment")
+                base["ip_reputation"] = row.get("ip_reputation")
+                base["threat_intelligence"] = row.get("threat_intelligence")
+            else:
+                # For non-port tables, normalize target for activity display
+                if table == "website_scans":
+                    base["target"] = row.get("target_url")
+                elif table == "email_scans":
+                    base["target"] = row.get("subject") or "Email analysis"
+                elif table == "password_scans":
+                    base["target"] = "Password analysis"
+                    base["risk_level"] = _display_risk(table, row)
+                elif table == "log_scans":
+                    base["target"] = "Log analysis"
+                base["threat_assessment"] = None
+                base["ip_reputation"] = None
+                base["threat_intelligence"] = None
+
+            # Normalize missing/empty target for clean display
+            if not base.get("target"):
+                if table == PORT_SCAN_TABLE:
+                    base["target"] = row.get("target") or row.get("resolved_ip") or "Security scan"
+                elif table == "website_scans":
+                    base["target"] = "Website scan"
+                elif table == "email_scans":
+                    base["target"] = "Email analysis"
+
+            items.append(base)
     for report in report_rows or []:
         title = report.get("title") or "Security Audit Report"
         items.append(
-            {"message": f"Report generated: {title}", "created_at": report.get("created_at")}
+            {
+                "message": f"Report generated: {title}",
+                "created_at": report.get("created_at"),
+                "target": title,
+                "type": "report",
+                "risk_level": None,
+                "status": None,
+                "threat_assessment": None,
+                "ip_reputation": None,
+                "threat_intelligence": None,
+            }
         )
     items.sort(
         key=lambda item: _parse_timestamp(item.get("created_at"))
@@ -251,7 +313,7 @@ def _trend(rows_by_table: dict, today=None) -> dict:
     now = today or datetime.now(timezone.utc).date()
     days = [now - timedelta(days=offset) for offset in range(TREND_DAYS - 1, -1, -1)]
     counts = {day: 0 for day in days}
-    for table in SCAN_TABLES:
+    for table in ALL_SCAN_TABLES:
         for row in rows_by_table.get(table) or []:
             ts = _parse_timestamp(row.get("created_at"))
             if ts is not None and ts.date() in counts:
@@ -288,7 +350,7 @@ class DashboardService:
             )
 
         rows_by_table = {
-            table: _fetch_rows(client, table, user_id) for table in SCAN_TABLES
+            table: _fetch_rows(client, table, user_id) for table in ALL_SCAN_TABLES
         }
         report_rows = _fetch_rows(client, "reports", user_id)
 
