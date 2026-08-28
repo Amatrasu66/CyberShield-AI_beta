@@ -15,7 +15,10 @@ logger = logging.getLogger("cybershield.request")
 
 # Headers applied to every response. Kept intentionally strict but safe for
 # browser clients (API responses only; served through the Vite proxy).
+# HSTS is also set here; Render may add its own HSTS at the edge but
+# including it at the app layer ensures direct header verification passes.
 SECURITY_HEADERS = {
+    "Strict-Transport-Security": "max-age=63072000; includeSubDomains; preload",
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "no-referrer",
