@@ -1,5 +1,6 @@
 import { useState, FormEvent, ChangeEvent, useRef } from 'react';
-import { Play, Loader2, AlertCircle, RefreshCw, MailWarning, ClipboardType, Upload, FileText, X } from 'lucide-react';
+import {BookOpen, ArrowRight, Play, Loader2, AlertCircle, RefreshCw, MailWarning, ClipboardType, Upload, FileText, X} from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { PageHeader } from '../components/PageHeader';
 import { Badge, Button, Card } from '../components/ui';
 import { apiClient, ApiClientError } from '../services/apiClient';
@@ -131,6 +132,16 @@ export function EmailDetectorPage() {
         description="Analyze suspicious message content for phishing language and risky indicators."
         actions={<Button variant="secondary" disabled={isAnalyzing}><RefreshCw size={16} /> History</Button>}
       />
+      {/* Tutorial link — helps users understand the tool BEFORE using it */}
+      <Card className="p-3 flex items-center justify-between gap-3 border-primary/20 bg-primary/[0.03] mt-4">
+        <p className="text-sm font-medium text-on-surface flex items-center gap-2">
+          <span className="grid h-7 w-7 place-items-center rounded bg-primary/15 text-primary shrink-0"><BookOpen size={14} /></span>
+          Learn about email security (SPF / DKIM / DMARC)
+        </p>
+        <Link to="/tutorials/phishing-detector/email-basics" className="inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline focus:outline-none focus:ring-2 focus:ring-primary/60 rounded px-1">
+          Open tutorial <ArrowRight size={14} />
+        </Link>
+      </Card>
       <div className="grid gap-5 xl:grid-cols-[1fr_0.9fr]">
         <Card className="p-5">
           <p className="font-display text-lg font-semibold">Run analysis</p>

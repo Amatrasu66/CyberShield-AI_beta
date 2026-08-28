@@ -1,6 +1,5 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
-import {
-  AlertCircle,
+import {BookOpen, AlertCircle,
   ArrowRight,
   Check,
   CheckCircle,
@@ -16,8 +15,8 @@ import {
   ShieldAlert,
   ShieldCheck,
   Sparkles,
-  XCircle,
-} from 'lucide-react';
+  XCircle,} from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { PageHeader } from '../components/PageHeader';
 import { Badge, Button, Card } from '../components/ui';
 import { cryptoConcepts, cryptoModules, type CryptoModuleId } from '../data/cryptoContent';
@@ -1305,6 +1304,16 @@ export function CryptographyLabPage() {
         title="Cryptography Lab"
         description="Experiment with real cryptographic primitives directly in your browser and learn what they actually provide."
       />
+      {/* Tutorial link — helps users understand the tool BEFORE using it */}
+      <Card className="p-3 flex items-center justify-between gap-3 border-primary/20 bg-primary/[0.03] mt-4">
+        <p className="text-sm font-medium text-on-surface flex items-center gap-2">
+          <span className="grid h-7 w-7 place-items-center rounded bg-primary/15 text-primary shrink-0"><BookOpen size={14} /></span>
+          Learn encryption vs hashing vs encoding
+        </p>
+        <Link to="/tutorials/cryptography-lab/concepts" className="inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline focus:outline-none focus:ring-2 focus:ring-primary/60 rounded px-1">
+          Open tutorial <ArrowRight size={14} />
+        </Link>
+      </Card>
 
       <Card className="border-warning/40 bg-warning/5 p-5">
         <div className="flex items-start gap-3">
