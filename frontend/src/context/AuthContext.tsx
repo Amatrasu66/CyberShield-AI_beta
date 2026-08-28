@@ -4,6 +4,17 @@ import { apiClient } from '../services/apiClient';
 import { supabase } from '../services/supabaseClient';
 import type { AuthProvider as SupabaseAuthProvider, AuthSession, AuthUser, UserProfile } from '../types';
 
+function getSiteUrl(): string {
+  const envUrl = import.meta.env.VITE_SITE_URL;
+  if (typeof envUrl === 'string' && envUrl.trim().length > 0) {
+    return envUrl.replace(/\/+$/, '');
+  }
+  if (import.meta.env.DEV) {
+    return 'http://localhost:3000';
+  }
+  return 'https://cyber-shield-ai-beta-topaz.vercel.app';
+}
+
 export interface AuthContextValue {
   readonly user: AuthUser | null;
   readonly session: AuthSession | null;
@@ -12,6 +23,8 @@ export interface AuthContextValue {
   readonly signIn: (email: string, password: string) => Promise<void>;
   readonly signUp: (email: string, password: string, fullName?: string) => Promise<boolean>;
   readonly signOut: () => Promise<void>;
+  readonly sendPasswordReset: (email: string) => Promise<void>;
+  readonly updatePassword: (newPassword: string) => Promise<void>;
 }
 
 function mapUser(authUser: User | null): AuthUser | null {
@@ -83,10 +96,15 @@ export function AuthProvider({ children }: { readonly children: ReactNode }) {
   }, []);
 
   const signUp = useCallback(async (email: string, password: string, fullName?: string): Promise<boolean> => {
+    const emailRedirectTo = `${getSiteUrl()}/auth/callback`;
+    const options: { data?: Record<string, unknown>; emailRedirectTo: string } | undefined =
+      fullName === undefined
+        ? { emailRedirectTo }
+        : { data: { full_name: fullName }, emailRedirectTo };
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: fullName === undefined ? undefined : { data: { full_name: fullName } },
+      options,
     });
     if (error) throw new Error(error.message);
     return data.session !== null;
@@ -94,6 +112,17 @@ export function AuthProvider({ children }: { readonly children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     const { error } = await supabase.auth.signOut();
+    if (error) throw new Error(error.message);
+  }, []);
+
+  const sendPasswordReset = useCallback(async (email: string) => {
+    const redirectTo = `${getSiteUrl()}/reset-password`;
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+    if (error) throw new Error(error.message);
+  }, []);
+
+  const updatePassword = useCallback(async (newPassword: string) => {
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
     if (error) throw new Error(error.message);
   }, []);
 
@@ -105,7 +134,9 @@ export function AuthProvider({ children }: { readonly children: ReactNode }) {
     signIn,
     signUp,
     signOut,
-  }), [user, session, profile, initializing, signIn, signUp, signOut]);
+    sendPasswordReset,
+    updatePassword,
+  }), [user, session, profile, initializing, signIn, signUp, signOut, sendPasswordReset, updatePassword]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
