@@ -58,7 +58,7 @@ async function handleResponseWithMeta<T>(response: Response): Promise<{ data: T;
   return { data: success.data, meta: success.meta };
 }
 
-async function request<T>(path: string, method: 'GET' | 'POST', body?: unknown): Promise<T> {
+async function request<T>(path: string, method: 'GET' | 'POST' | 'PATCH' | 'PUT', body?: unknown): Promise<T> {
   const token = await getAccessToken().catch(() => null);
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (token !== null) {
@@ -127,5 +127,7 @@ export const apiClient = {
   get: <T>(path: string): Promise<T> => request<T>(path, 'GET'),
   getWithMeta: <T>(path: string): Promise<{ data: T; meta?: Record<string, unknown> }> => requestWithMeta<T>(path, 'GET'),
   post: <T>(path: string, body?: unknown): Promise<T> => request<T>(path, 'POST', body),
+  patch: <T>(path: string, body?: unknown): Promise<T> => request<T>(path, 'PATCH', body),
+  put: <T>(path: string, body?: unknown): Promise<T> => request<T>(path, 'PUT', body),
   postForm: <T>(path: string, formData: FormData): Promise<T> => requestFormData<T>(path, formData),
 };

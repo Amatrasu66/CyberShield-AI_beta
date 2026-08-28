@@ -25,6 +25,8 @@ export interface AuthContextValue {
   readonly signOut: () => Promise<void>;
   readonly sendPasswordReset: (email: string) => Promise<void>;
   readonly updatePassword: (newPassword: string) => Promise<void>;
+  readonly refreshProfile: () => Promise<void>;
+  readonly updateProfile: (fullName: string) => Promise<UserProfile>;
 }
 
 function mapUser(authUser: User | null): AuthUser | null {
@@ -77,6 +79,19 @@ export function AuthProvider({ children }: { readonly children: ReactNode }) {
     return () => { listener.subscription.unsubscribe(); };
   }, []);
 
+  const refreshProfile = useCallback(async () => {
+    if (session === null) {
+      setProfile(null);
+      return;
+    }
+    try {
+      const nextProfile = await apiClient.get<UserProfile>('/auth/me');
+      setProfile(nextProfile);
+    } catch {
+      // keep existing profile on failure; caller handles errors via updateProfile
+    }
+  }, [session]);
+
   useEffect(() => {
     if (session === null) {
       setProfile(null);
@@ -89,6 +104,24 @@ export function AuthProvider({ children }: { readonly children: ReactNode }) {
       .catch(() => { if (!cancelled) setProfile(null); });
     return () => { cancelled = true; };
   }, [session?.accessToken]);
+
+  const updateProfile = useCallback(async (fullName: string): Promise<UserProfile> => {
+    const trimmed = fullName.trim();
+    if (trimmed.length === 0) throw new Error('Full name must not be empty');
+    if (trimmed.length > 100) throw new Error('Full name must be at most 100 characters');
+    const updated = await apiClient.patch<UserProfile>('/auth/me', { full_name: trimmed });
+    setProfile(updated);
+    // Keep Supabase user_metadata.full_name in sync without overwriting unrelated metadata
+    try {
+      await supabase.auth.updateUser({ data: { full_name: trimmed } });
+      // Refresh mapped user from supabase session metadata
+      const { data } = await supabase.auth.getSession();
+      setUser(mapUser(data.session?.user ?? null));
+    } catch {
+      // Non-fatal: profile row is authoritative
+    }
+    return updated;
+  }, []);
 
   const signIn = useCallback(async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -136,7 +169,9 @@ export function AuthProvider({ children }: { readonly children: ReactNode }) {
     signOut,
     sendPasswordReset,
     updatePassword,
-  }), [user, session, profile, initializing, signIn, signUp, signOut, sendPasswordReset, updatePassword]);
+    refreshProfile,
+    updateProfile,
+  }), [user, session, profile, initializing, signIn, signUp, signOut, sendPasswordReset, updatePassword, refreshProfile, updateProfile]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
