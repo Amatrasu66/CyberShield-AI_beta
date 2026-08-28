@@ -1,8 +1,8 @@
 import { useState, type FormEvent } from 'react';
-import { ShieldCheck } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { authContent } from '../data/mockData';
 import { Button, TextInput } from '../components/ui';
+import { BrandLogo } from '../components/BrandLogo';
 import { PasswordInput } from '../components/PasswordInput';
 import { useAuth } from '../context/AuthContext';
 
@@ -77,12 +77,7 @@ export function AuthPage({ mode }: AuthPageProps) {
       <section className="relative hidden overflow-hidden border-r bg-surface-lowest p-12 lg:block">
         <div className="grid-glow absolute inset-0" />
         <div className="relative flex h-full flex-col justify-between">
-          <div className="flex items-center gap-3 font-display text-xl font-bold">
-            <span className="grid h-10 w-10 place-items-center rounded bg-primary text-primary-foreground">
-              <ShieldCheck />
-            </span>
-            CyberShield AI
-          </div>
+          <BrandLogo className="h-8 w-auto max-w-[190px]" />
           <div className="max-w-md">
             <p className="eyebrow mb-4">Security intelligence</p>
             <h1 className="font-display text-5xl font-bold leading-tight tracking-tight">
@@ -96,11 +91,8 @@ export function AuthPage({ mode }: AuthPageProps) {
 
       <section className="flex items-center justify-center p-6">
         <div className="w-full max-w-md">
-          <Link to="/dashboard" className="mb-10 flex items-center gap-3 font-display text-xl font-bold lg:hidden">
-            <span className="grid h-9 w-9 place-items-center rounded bg-primary text-primary-foreground">
-              <ShieldCheck size={20} />
-            </span>
-            CyberShield AI
+          <Link to="/dashboard" className="mb-10 inline-flex lg:hidden" aria-label="CyberShield — Go to dashboard">
+            <BrandLogo className="h-8 w-auto max-w-[180px]" />
           </Link>
           <p className="eyebrow mb-3">Secure access</p>
           <h2 className="font-display text-3xl font-bold">{content.title}</h2>

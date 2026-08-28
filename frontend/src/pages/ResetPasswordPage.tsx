@@ -1,6 +1,7 @@
 import { useState, type FormEvent, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ShieldCheck, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
+import { AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
+import { BrandLogo, BrandMark } from '../components/BrandLogo';
 import { PasswordInput } from '../components/PasswordInput';
 import { Button } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
@@ -77,9 +78,7 @@ export function ResetPasswordPage() {
     return (
       <main className="grid min-h-screen place-items-center bg-background p-6">
         <div className="flex flex-col items-center gap-3">
-          <span className="grid h-12 w-12 animate-pulse place-items-center rounded bg-primary text-primary-foreground">
-            <ShieldCheck size={22} />
-          </span>
+          <BrandMark className="h-12 w-12 animate-pulse" decorative={false} />
           <p className="flex items-center gap-2 text-sm text-on-surface-variant">
             <Loader2 size={16} className="animate-spin" /> Verifying recovery link…
           </p>
@@ -93,12 +92,7 @@ export function ResetPasswordPage() {
       <section className="relative hidden overflow-hidden border-r bg-surface-lowest p-12 lg:block">
         <div className="grid-glow absolute inset-0" />
         <div className="relative flex h-full flex-col justify-between">
-          <div className="flex items-center gap-3 font-display text-xl font-bold">
-            <span className="grid h-10 w-10 place-items-center rounded bg-primary text-primary-foreground">
-              <ShieldCheck />
-            </span>
-            CyberShield AI
-          </div>
+          <BrandLogo className="h-8 w-auto max-w-[190px]" />
           <div className="max-w-md">
             <p className="eyebrow mb-4">Security intelligence</p>
             <h1 className="font-display text-5xl font-bold leading-tight tracking-tight">
@@ -114,11 +108,8 @@ export function ResetPasswordPage() {
 
       <section className="flex items-center justify-center p-6">
         <div className="w-full max-w-md">
-          <Link to="/login" className="mb-10 flex items-center gap-3 font-display text-xl font-bold lg:hidden">
-            <span className="grid h-9 w-9 place-items-center rounded bg-primary text-primary-foreground">
-              <ShieldCheck size={20} />
-            </span>
-            CyberShield AI
+          <Link to="/login" className="mb-10 inline-flex lg:hidden" aria-label="CyberShield — Go to dashboard">
+            <BrandLogo className="h-8 w-auto max-w-[180px]" />
           </Link>
           <p className="eyebrow mb-3">New credentials</p>
           <h2 className="font-display text-3xl font-bold">Set a new password</h2>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ShieldCheck, Loader2, AlertCircle } from 'lucide-react';
+import { Loader2, AlertCircle } from 'lucide-react';
+import { BrandMark } from '../components/BrandLogo';
 import { supabase } from '../services/supabaseClient';
 
 export function AuthCallbackPage() {
@@ -80,9 +81,7 @@ export function AuthCallbackPage() {
   return (
     <main className="grid min-h-screen place-items-center bg-background p-6">
       <div className="flex flex-col items-center gap-4">
-        <span className="grid h-12 w-12 animate-pulse place-items-center rounded bg-primary text-primary-foreground">
-          <ShieldCheck size={22} />
-        </span>
+        <BrandMark className="h-12 w-12 animate-pulse" />
         <p className="flex items-center gap-2 text-sm text-on-surface-variant">
           <Loader2 size={16} className="animate-spin" /> Confirming your email…
         </p>
