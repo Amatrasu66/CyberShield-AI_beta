@@ -1,5 +1,5 @@
 import { useState, FormEvent, useCallback } from 'react';
-import { Play, Loader2, AlertCircle, Shield, Search, Layers, Clock, Target, HardDrive, ArrowLeft, ChevronLeft, ChevronRight, Eye, History, Globe, Building, Flag, AlertTriangle, CheckCircle, HelpCircle, Activity, Zap } from 'lucide-react';
+import { Play, Loader2, AlertCircle, Shield, Search, Layers, Clock, Target, HardDrive, ArrowLeft, ChevronLeft, ChevronRight, Eye, History, Globe, Building, Flag, AlertTriangle, CheckCircle, HelpCircle, Activity, Zap, Info, ShieldAlert, ShieldCheck, Database, Radio } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { Badge, Button, Card, DataTable } from '../components/ui';
 import { apiClient, ApiClientError } from '../services/apiClient';
@@ -20,6 +20,13 @@ const COMMON_SCAN_PORTS = [
   10000, 11211, 15672, 27017, 27018, 27019,
 ];
 
+// Scan profiles are derived from backend validators: QUICK=20 ports, COMMON= up to 100 (clamped from 117)
+const PROFILE_META: Record<string, { label: string; short: string; detail: string }> = {
+  quick: { label: 'Quick', short: 'Quick — 20 ports', detail: 'Fast scan with limited port coverage. Covers the 20 most commonly exposed services.' },
+  common: { label: 'Standard', short: 'Standard — up to 100 ports', detail: 'Balanced coverage for normal assessments. Scans a broader set of common services (backend clamps to 100 ports max).' },
+  custom: { label: 'Custom', short: 'Custom', detail: 'Specify up to 100 ports to scan. Duplicates are removed and ports are validated server-side.' },
+};
+
 type ScanMode = 'quick' | 'common' | 'custom';
 
 function formatDate(iso: string): string {
@@ -38,7 +45,7 @@ function ReputationBadge({ reputation }: { reputation: IPReputationResult['reput
   };
   const c = config[reputation] ?? config.unknown;
   const Icon = c.icon;
-  return <Badge tone={c.tone}><Icon size={12} className="mr-1" />{c.label}</Badge>;
+  return <Badge tone={c.tone}><Icon size={12} className="mr-1" aria-hidden="true" />{c.label}</Badge>;
 }
 
 function ConfidenceBadge({ confidence }: { confidence: string | null }) {
@@ -66,7 +73,7 @@ function ThreatLevelBadge({ level }: { level: ThreatAssessment['level'] }) {
     critical: Zap,
   };
   const Icon = icons[level];
-  return <Badge tone={tones[level]}><Icon size={12} className="mr-1" />{level.toUpperCase()}</Badge>;
+  return <Badge tone={tones[level]}><Icon size={12} className="mr-1" aria-hidden="true" />{level.toUpperCase()}</Badge>;
 }
 
 function ThreatConfidenceBadge({ confidence }: { confidence: ThreatAssessment['confidence'] }) {
@@ -78,16 +85,161 @@ function ThreatConfidenceBadge({ confidence }: { confidence: ThreatAssessment['c
   return <Badge tone={tones[confidence] ?? 'primary'}>{confidence}</Badge>;
 }
 
+function PortRiskBadge({ risk }: { risk: PortScanResult['risk_level'] }) {
+  const tones: Record<PortScanResult['risk_level'], 'success' | 'primary' | 'warning' | 'danger'> = {
+    low: 'success',
+    medium: 'warning',
+    high: 'danger',
+    critical: 'danger',
+  };
+  const labels: Record<PortScanResult['risk_level'], string> = {
+    low: 'LOW',
+    medium: 'MEDIUM',
+    high: 'HIGH',
+    critical: 'CRITICAL',
+  };
+  const icons: Record<string, typeof Shield> = { low: ShieldCheck, medium: Shield, high: ShieldAlert, critical: Zap };
+  const Icon = icons[risk] ?? Shield;
+  return <Badge tone={tones[risk]}><Icon size={12} className="mr-1" aria-hidden="true" />{labels[risk]}</Badge>;
+}
+
+// Scanning explanatory sequence — never fakes progress percentage, never marks as completed unless backend returns
+function ScanningState({ elapsedSeconds, isSlow }: { elapsedSeconds: number; isSlow: boolean }) {
+  const stages = [
+    { label: 'Preparing scan', desc: 'Validating target and scan profile' },
+    { label: 'Resolving target', desc: 'Resolving domain to public IP (TOCTOU-safe, single lookup)' },
+    { label: 'Checking network exposure', desc: 'TCP connect scan with bounded concurrency' },
+    { label: 'Analyzing IP reputation', desc: 'Checking available reputation information for the resolved public IP' },
+    { label: 'Collecting threat intelligence', desc: 'Collecting evidence from configured intelligence providers' },
+    { label: 'Building threat assessment', desc: 'Combining evidence into derived overall threat' },
+  ];
+  return (
+    <Card className="p-5" aria-live="polite" aria-busy="true">
+      <div className="flex items-start gap-3">
+        <span className="grid h-10 w-10 place-items-center rounded-full bg-primary/10 text-primary shrink-0">
+          <Loader2 size={18} className="animate-spin" aria-hidden="true" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="font-display text-base font-semibold">Analyzing…</p>
+          <p className="mt-1 text-sm leading-6 text-on-surface-variant">CyberShield is running your security scan. This may take up to 30 seconds for a full port sweep. Do not close this page.</p>
+          <div className="mt-3">
+            <div className="indeterminate-track w-full max-w-[260px]" aria-hidden="true" />
+          </div>
+        </div>
+      </div>
+      <div className="mt-6">
+        <p className="eyebrow mb-3">What is happening</p>
+        <ol className="space-y-2">
+          {stages.map((s) => (
+            <li key={s.label} className="flex items-start gap-3 rounded border bg-surface-low px-3 py-2.5">
+              <span className="mt-1.5 h-2 w-2 rounded-full bg-primary/60 shrink-0" aria-hidden="true" />
+              <div>
+                <p className="text-sm font-medium text-on-surface">{s.label}</p>
+                <p className="text-xs leading-5 text-on-surface-variant">{s.desc}</p>
+              </div>
+            </li>
+          ))}
+        </ol>
+        <p className="mt-3 text-xs leading-5 text-on-surface-variant">These steps are shown for explanation. The backend does not expose per-stage progress, so no stage is marked “completed” until the full response arrives.</p>
+      </div>
+      {isSlow && <div className="mt-4"><SlowRequestNotice elapsedSeconds={elapsedSeconds} /></div>}
+    </Card>
+  );
+}
+
+function OverallThreatCard({ assessment }: { assessment: ThreatAssessment | null | undefined }) {
+  if (!assessment) {
+    return (
+      <Card className="p-5 border-amber-500/20">
+        <p className="eyebrow mb-2 flex items-center gap-2"><Shield size={14} aria-hidden="true" /> Overall threat — derived by CyberShield</p>
+        <div className="flex items-start gap-3 rounded border bg-surface-low p-4">
+          <HelpCircle size={18} className="mt-0.5 text-on-surface-variant shrink-0" aria-hidden="true" />
+          <div>
+            <p className="text-sm font-medium text-on-surface">Threat assessment not available for this scan.</p>
+            <p className="mt-1 text-sm leading-6 text-on-surface-variant">This scan was created before overall threat assessment was enabled or the assessment could not be built.</p>
+          </div>
+        </div>
+      </Card>
+    );
+  }
+  const scoreTone = assessment.level === 'low' ? 'text-success' : assessment.level === 'critical' ? 'text-danger' : assessment.level === 'high' ? 'text-danger' : 'text-warning';
+  return (
+    <Card className="p-5 border-primary/20">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <p className="eyebrow mb-2 flex items-center gap-2"><Shield size={14} aria-hidden="true" /> Overall threat</p>
+          <p className="text-xs font-mono uppercase tracking-wide text-on-surface-variant">Derived from available port-risk and threat-intelligence evidence</p>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <p className={`font-display text-3xl font-bold ${scoreTone}`} aria-label={`Overall threat score ${assessment.score} out of 100, ${assessment.level}`}>{assessment.score} <span className="text-lg font-medium text-on-surface-variant">/ 100</span></p>
+            <ThreatLevelBadge level={assessment.level} />
+            <span className="inline-flex items-center gap-1 text-xs font-medium uppercase tracking-wide text-on-surface-variant">
+              <Activity size={12} aria-hidden="true" /> {assessment.confidence} confidence
+            </span>
+          </div>
+          <p className="mt-3 text-sm leading-6 text-on-surface-variant">{assessment.explanation}</p>
+          <p className="mt-2 text-xs font-mono text-on-surface-variant/70">Assessed: {formatDate(assessment.assessed_at)} · {assessment.factors.length} factor(s)</p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2 self-start">
+          <ThreatConfidenceBadge confidence={assessment.confidence} />
+        </div>
+      </div>
+
+      {assessment.factors.length > 0 && (
+        <div className="mt-6">
+          <p className="eyebrow mb-2">Contributing factors</p>
+          <ul className="space-y-2" role="list">
+            {assessment.factors.map((f, idx) => (
+              <li key={`${f.type}-${idx}`} className="flex items-center justify-between gap-3 rounded border bg-surface-low px-3 py-2">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium capitalize truncate">{f.type.replace(/_/g, ' ')}</p>
+                  <p className="text-xs text-on-surface-variant">{f.description}</p>
+                </div>
+                <Badge tone={f.weight > 0 ? 'warning' : 'primary'}>+{f.weight}</Badge>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function PortRiskCard({ result }: { result: PortScanResult | PortScanDetail }) {
+  const risk = result.risk_level;
+  return (
+    <Card className="p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="eyebrow mb-2 flex items-center gap-2"><ShieldAlert size={14} aria-hidden="true" /> Port risk</p>
+          <p className="text-xs font-mono uppercase tracking-wide text-on-surface-variant">Based on open services only — independent from IP reputation</p>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <p className="font-display text-2xl font-bold">{risk.toUpperCase()}</p>
+            <PortRiskBadge risk={risk} />
+          </div>
+          <p className="mt-2 text-sm text-on-surface-variant">{(result as PortScanResult).summary ?? `Scanned ${result.ports_scanned} ports`}</p>
+        </div>
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2 text-xs font-mono">
+        <span className="rounded bg-surface-low px-3 py-1 border">Open: {(result as PortScanResult).open_ports?.filter(p=>p.state==='open').length ?? (result as PortScanDetail).open_port_count ?? 0}</span>
+        <span className="rounded bg-surface-low px-3 py-1 border">Scanned: {result.ports_scanned}</span>
+        <span className="rounded bg-surface-low px-3 py-1 border">Target: {result.target}</span>
+        {result.resolved_ip && <span className="rounded bg-surface-low px-3 py-1 border">IP: {result.resolved_ip}</span>}
+      </div>
+    </Card>
+  );
+}
+
 function IPReputationCard({ reputation, titleEyebrow }: { reputation: IPReputationResult | null | undefined; titleEyebrow?: string }) {
   if (!reputation) {
     return (
       <Card className="p-5">
         <p className="eyebrow mb-2">{titleEyebrow ?? 'IP reputation'}</p>
-        <div className="flex items-start gap-3 rounded border bg-surface-low p-4">
-          <HelpCircle size={18} className="mt-0.5 text-on-surface-variant" />
+        <p className="text-xs font-mono uppercase tracking-wide text-on-surface-variant">Independent from port risk</p>
+        <div className="flex items-start gap-3 rounded border bg-surface-low p-4 mt-4">
+          <HelpCircle size={18} className="mt-0.5 text-on-surface-variant shrink-0" aria-hidden="true" />
           <div>
-            <p className="text-sm font-medium text-on-surface">Reputation not available for this scan.</p>
-            <p className="mt-1 text-sm leading-6 text-on-surface-variant">This scan was created before IP reputation was enabled or the provider returned no data.</p>
+            <p className="text-sm font-medium text-on-surface">IP reputation not available for this scan.</p>
+            <p className="mt-1 text-sm leading-6 text-on-surface-variant">Threat intelligence was not available when this scan was created or the provider returned no data. UNKNOWN ≠ CLEAN.</p>
           </div>
         </div>
       </Card>
@@ -99,44 +251,44 @@ function IPReputationCard({ reputation, titleEyebrow }: { reputation: IPReputati
 
   return (
     <Card className="p-5">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <p className="eyebrow mb-2">{titleEyebrow ?? 'IP reputation'}</p>
-          <p className="text-xs font-mono uppercase tracking-wide text-on-surface-variant">Independent from port risk</p>
+          <p className="text-xs font-mono uppercase tracking-wide text-on-surface-variant">IP reputation — independent from port risk</p>
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <p className="font-display text-2xl font-bold">{reputation.reputation.toUpperCase()}</p>
             <ReputationBadge reputation={reputation.reputation} />
             {!isUnavailable && !isUnknown && <ConfidenceBadge confidence={reputation.confidence} />}
           </div>
           <p className="mt-2 text-sm text-on-surface-variant">
-            {isUnavailable && 'Provider unavailable or IP not checked.'}
-            {isUnknown && 'No reputation data reported for this IP.'}
+            {isUnavailable && 'Provider unavailable or IP not checked. UNAVAILABLE ≠ CLEAN.'}
+            {isUnknown && 'No reputation data reported for this IP. UNKNOWN ≠ CLEAN.'}
             {reputation.reputation === 'clean' && 'No abuse reported for this IP.'}
             {reputation.reputation === 'suspicious' && `${reputation.reports} abuse report${reputation.reports === 1 ? '' : 's'} • flagged as suspicious.`}
             {reputation.reputation === 'malicious' && `${reputation.reports} abuse report${reputation.reports === 1 ? '' : 's'} • flagged as malicious.`}
           </p>
         </div>
-        <Badge tone="primary"><Globe size={12} className="mr-1" />{reputation.provider}</Badge>
+        <Badge tone="primary"><Globe size={12} className="mr-1" aria-hidden="true" />{reputation.provider}</Badge>
       </div>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded border bg-surface-low p-4">
-          <p className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-on-surface-variant"><Globe size={14} /> IP</p>
-          <p className="mt-2 font-mono text-sm font-semibold text-on-surface">{reputation.ip}</p>
+          <p className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-on-surface-variant"><Globe size={14} aria-hidden="true" /> IP</p>
+          <p className="mt-2 font-mono text-sm font-semibold text-on-surface break-all">{reputation.ip}</p>
           <p className="mt-1 text-xs text-on-surface-variant">Reports: {reputation.reports}</p>
         </div>
         <div className="rounded border bg-surface-low p-4">
-          <p className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-on-surface-variant"><Flag size={14} /> Country / ASN</p>
+          <p className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-on-surface-variant"><Flag size={14} aria-hidden="true" /> Country / ASN</p>
           <p className="mt-2 font-mono text-sm font-semibold text-on-surface">{reputation.country ?? '—'} {reputation.asn ? `· AS${reputation.asn}` : ''}</p>
           <p className="mt-1 text-xs text-on-surface-variant">ASN: {reputation.asn ?? '—'}</p>
         </div>
         <div className="rounded border bg-surface-low p-4">
-          <p className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-on-surface-variant"><Building size={14} /> Organization</p>
-          <p className="mt-2 text-sm font-semibold text-on-surface">{reputation.organization ?? reputation.isp ?? '—'}</p>
-          <p className="mt-1 text-xs text-on-surface-variant">{reputation.isp ?? ''}</p>
+          <p className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-on-surface-variant"><Building size={14} aria-hidden="true" /> Organization</p>
+          <p className="mt-2 text-sm font-semibold text-on-surface break-words">{reputation.organization ?? reputation.isp ?? '—'}</p>
+          <p className="mt-1 text-xs text-on-surface-variant break-words">{reputation.isp ?? ''}</p>
         </div>
         <div className="rounded border bg-surface-low p-4">
-          <p className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-on-surface-variant"><Clock size={14} /> Last reported</p>
+          <p className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-on-surface-variant"><Clock size={14} aria-hidden="true" /> Last reported</p>
           <p className="mt-2 text-sm font-semibold text-on-surface">{reputation.last_reported_at ? formatDate(reputation.last_reported_at) : '—'}</p>
           <p className="mt-1 text-xs text-on-surface-variant">Checked: {reputation.checked_at ? formatDate(reputation.checked_at) : '—'}</p>
         </div>
@@ -153,29 +305,31 @@ function ThreatIntelligenceCard({ bundle, titleEyebrow }: { bundle: ThreatIntell
   if (!bundle || !bundle.providers || bundle.providers.length === 0) {
     return (
       <Card className="p-5">
-        <p className="eyebrow mb-2">{titleEyebrow ?? 'Threat intelligence — multi-provider evidence'}</p>
+        <p className="eyebrow mb-2">{titleEyebrow ?? 'Threat intelligence'}</p>
         <p className="text-xs font-mono uppercase tracking-wide text-on-surface-variant">Independent evidence from enabled providers</p>
         <div className="flex items-start gap-3 rounded border bg-surface-low p-4 mt-4">
-          <HelpCircle size={18} className="mt-0.5 text-on-surface-variant" />
+          <HelpCircle size={18} className="mt-0.5 text-on-surface-variant shrink-0" aria-hidden="true" />
           <div>
-            <p className="text-sm font-medium text-on-surface">No threat intelligence available for this scan.</p>
-            <p className="mt-1 text-sm leading-6 text-on-surface-variant">This scan was created before threat intelligence was enabled or no providers were checked. UNKNOWN ≠ CLEAN.</p>
+            <p className="text-sm font-medium text-on-surface">Threat intelligence was not available when this scan was created.</p>
+            <p className="mt-1 text-sm leading-6 text-on-surface-variant">No providers were checked or no evidence was returned. UNKNOWN ≠ CLEAN · UNAVAILABLE ≠ CLEAN.</p>
           </div>
         </div>
       </Card>
     );
   }
   const overall = bundle.summary?.overall_reputation ?? 'unknown';
+  // Gracefully handle single-provider case
+  const isMixed = bundle.providers.length > 1;
   return (
     <Card className="p-5">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <p className="eyebrow mb-2">{titleEyebrow ?? 'Threat intelligence — multi-provider evidence'}</p>
-          <p className="text-xs font-mono uppercase tracking-wide text-on-surface-variant">Evidence, not verdict — providers are independent</p>
+          <p className="eyebrow mb-2">{titleEyebrow ?? 'Threat intelligence'}</p>
+          <p className="text-xs font-mono uppercase tracking-wide text-on-surface-variant">Evidence, not verdict — providers are independent {isMixed ? '· multi-provider' : '· single provider'}</p>
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <p className="font-display text-2xl font-bold">{overall.toUpperCase()}</p>
             <ReputationBadge reputation={overall as IPReputationResult['reputation']} />
-            <Badge tone="primary"><Activity size={12} className="mr-1" />{bundle.sources_available}/{bundle.sources_checked} providers</Badge>
+            <Badge tone="primary"><Activity size={12} className="mr-1" aria-hidden="true" />{bundle.sources_available}/{bundle.sources_checked} providers</Badge>
           </div>
           <p className="mt-2 text-sm text-on-surface-variant">
             Overall {overall} · Evidence confidence {bundle.summary?.evidence_confidence ?? bundle.confidence} · Checked {bundle.checked_at ? formatDate(bundle.checked_at) : '—'}
@@ -187,9 +341,9 @@ function ThreatIntelligenceCard({ bundle, titleEyebrow }: { bundle: ThreatIntell
       <div className="mt-6 space-y-3">
         {bundle.providers.map((p: ProviderEvidence) => (
           <div key={p.provider} className="rounded border bg-surface-low p-4">
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-xs font-medium uppercase tracking-wide text-on-surface-variant flex items-center gap-2"><Globe size={14} /> {p.provider}</p>
-              <div className="flex items-center gap-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <p className="text-xs font-medium uppercase tracking-wide text-on-surface-variant flex items-center gap-2"><Radio size={14} aria-hidden="true" /> {p.provider}</p>
+              <div className="flex items-center gap-2 flex-wrap">
                 <ReputationBadge reputation={p.reputation} />
                 {p.confidence && p.confidence !== 'none' && <ConfidenceBadge confidence={p.confidence} />}
                 <Badge tone={p.status === 'available' ? 'success' : p.status === 'unknown' ? 'primary' : 'warning'}>{p.status}</Badge>
@@ -198,7 +352,7 @@ function ThreatIntelligenceCard({ bundle, titleEyebrow }: { bundle: ThreatIntell
             <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4 text-sm">
               <div>
                 <p className="text-xs uppercase tracking-wide text-on-surface-variant">Reputation</p>
-                <p className="font-mono font-semibold">{p.reputation}</p>
+                <p className="font-mono font-semibold capitalize">{p.reputation}</p>
               </div>
               <div>
                 <p className="text-xs uppercase tracking-wide text-on-surface-variant">Confidence</p>
@@ -216,86 +370,16 @@ function ThreatIntelligenceCard({ bundle, titleEyebrow }: { bundle: ThreatIntell
             {(p.visitor_type !== null && p.visitor_type !== undefined) || (p.visitor_type_name) ? (
               <div className="mt-2 text-sm">
                 <p className="text-xs uppercase tracking-wide text-on-surface-variant">Visitor type</p>
-                <p className="font-mono">{p.visitor_type_name ?? p.visitor_type} {p.categories && p.categories.length ? `· ${p.categories.join(', ')}` : ''}</p>
+                <p className="font-mono break-words">{p.visitor_type_name ?? p.visitor_type} {p.categories && p.categories.length ? `· ${p.categories.join(', ')}` : ''}</p>
               </div>
             ) : null}
             {p.reason && (
               <p className="mt-2 text-xs font-mono text-on-surface-variant/70">Reason: {p.reason}</p>
             )}
-            <p className="mt-1 text-xs font-mono text-on-surface-variant/70">Checked: {p.checked_at ? formatDate(p.checked_at) : '—'} · Evidence</p>
+            <p className="mt-1 text-xs font-mono text-on-surface-variant/70">Checked: {p.checked_at ? formatDate(p.checked_at) : '—'}</p>
           </div>
         ))}
       </div>
-    </Card>
-  );
-}
-
-function ThreatAssessmentCard({ assessment, titleEyebrow }: { assessment: ThreatAssessment | null | undefined; titleEyebrow?: string }) {
-  if (!assessment) {
-    return (
-      <Card className="p-5">
-        <p className="eyebrow mb-2">{titleEyebrow ?? 'Overall threat'}</p>
-        <div className="flex items-start gap-3 rounded border bg-surface-low p-4">
-          <HelpCircle size={18} className="mt-0.5 text-on-surface-variant" />
-          <div>
-            <p className="text-sm font-medium text-on-surface">Threat assessment not available for this scan.</p>
-            <p className="mt-1 text-sm leading-6 text-on-surface-variant">This scan was created before overall threat assessment was enabled.</p>
-          </div>
-        </div>
-      </Card>
-    );
-  }
-
-  return (
-    <Card className="p-5">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="eyebrow mb-2">{titleEyebrow ?? 'Overall threat'}</p>
-          <p className="text-xs font-mono uppercase tracking-wide text-on-surface-variant">Derived from port risk + IP reputation</p>
-          <div className="mt-3 flex flex-wrap items-center gap-3">
-            <p className="font-display text-2xl font-bold">{assessment.score} / 100</p>
-            <ThreatLevelBadge level={assessment.level} />
-            <ThreatConfidenceBadge confidence={assessment.confidence} />
-          </div>
-          <p className="mt-2 text-sm leading-6 text-on-surface-variant">{assessment.explanation}</p>
-        </div>
-        <Badge tone="primary"><Activity size={12} className="mr-1" />{assessment.confidence}</Badge>
-      </div>
-
-      <div className="mt-6 grid gap-4 sm:grid-cols-3">
-        <div className="rounded border bg-surface-low p-4">
-          <p className="text-xs font-medium uppercase tracking-wide text-on-surface-variant">Overall Score</p>
-          <p className="mt-2 font-display text-xl font-bold">{assessment.score}</p>
-          <p className="mt-1 text-xs text-on-surface-variant">Level: {assessment.level}</p>
-        </div>
-        <div className="rounded border bg-surface-low p-4">
-          <p className="text-xs font-medium uppercase tracking-wide text-on-surface-variant">Confidence</p>
-          <p className="mt-2 font-display text-xl font-bold capitalize">{assessment.confidence}</p>
-          <p className="mt-1 text-xs text-on-surface-variant">Evidence completeness</p>
-        </div>
-        <div className="rounded border bg-surface-low p-4">
-          <p className="text-xs font-medium uppercase tracking-wide text-on-surface-variant">Assessed</p>
-          <p className="mt-2 font-mono text-sm font-semibold">{formatDate(assessment.assessed_at)}</p>
-          <p className="mt-1 text-xs text-on-surface-variant">{assessment.factors.length} factor(s)</p>
-        </div>
-      </div>
-
-      {assessment.factors.length > 0 && (
-        <div className="mt-6">
-          <p className="eyebrow mb-2">Contributing factors</p>
-          <div className="space-y-2">
-            {assessment.factors.map((f, idx) => (
-              <div key={`${f.type}-${idx}`} className="flex items-center justify-between gap-3 rounded border bg-surface-low px-3 py-2">
-                <div>
-                  <p className="text-sm font-medium capitalize">{f.type.replace(/_/g, ' ')}</p>
-                  <p className="text-xs text-on-surface-variant">{f.description}</p>
-                </div>
-                <Badge tone={f.weight > 0 ? 'warning' : 'primary'}>+{f.weight}</Badge>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </Card>
   );
 }
@@ -325,15 +409,40 @@ export function PortScannerPage() {
   const [detailError, setDetailError] = useState<string | null>(null);
   const { run: runDetail, isSlow: detailSlow, elapsedSeconds: detailElapsed } = useSlowRequest();
 
+  const mapError = (err: unknown, fallback: string): string => {
+    if (err instanceof ApiClientError) {
+      if (err.status === 401) return 'Your session has expired. Please sign in again.';
+      if (err.status === 400) return err.message || 'Invalid target. Enter a public domain or IP address.';
+      if (err.status === 429) return err.message || 'Rate limit reached. Too many scans — please wait a few minutes and try again.';
+      if (err.status === 503) return 'Security scan is temporarily unavailable. Please try again later.';
+      if (err.status === 0) return 'Unable to connect to the backend. Check your connection and try again.';
+      return err.message || fallback;
+    }
+    return fallback;
+  };
+
   const handleScan = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!target.trim()) return;
+    const trimmed = target.trim();
+    if (!trimmed) {
+      setError('Enter a domain or public IP address to scan.');
+      return;
+    }
+    // Basic frontend validation mirrors backend but does not replace it
+    if (trimmed.includes('://')) {
+      setError('Enter a hostname or IP without scheme (e.g., example.com, not https://example.com).');
+      return;
+    }
+    if (trimmed.includes('@')) {
+      setError('Target must not contain credentials.');
+      return;
+    }
 
     setIsScanning(true);
     setError(null);
     setResult(null);
 
-    let requestBody: PortScanRequest = { target: target.trim() };
+    let requestBody: PortScanRequest = { target: trimmed };
 
     if (scanMode === 'quick') {
       requestBody = { ...requestBody, profile: 'quick' };
@@ -351,6 +460,11 @@ export function PortScannerPage() {
         setIsScanning(false);
         return;
       }
+      if (ports.length > 100) {
+        setError('Too many ports — maximum is 100 per scan.');
+        setIsScanning(false);
+        return;
+      }
       requestBody = { ...requestBody, ports };
     }
 
@@ -362,35 +476,10 @@ export function PortScannerPage() {
         void fetchHistory(1);
       }
     } catch (err) {
-      if (err instanceof ApiClientError) {
-        setError(err.message || 'Scan failed. Please try again.');
-      } else {
-        setError('An unexpected error occurred. Please try again.');
-      }
+      setError(mapError(err, 'Scan failed. Please try again.'));
     } finally {
       setIsScanning(false);
     }
-  };
-
-  const getRiskBadge = (risk: PortScanResult['risk_level']) => {
-    const tones: Record<PortScanResult['risk_level'], 'success' | 'primary' | 'warning' | 'danger'> = {
-      low: 'success',
-      medium: 'warning',
-      high: 'danger',
-      critical: 'danger',
-    };
-    const labels: Record<PortScanResult['risk_level'], string> = {
-      low: 'Low risk',
-      medium: 'Medium risk',
-      high: 'High risk',
-      critical: 'Critical risk',
-    };
-    return (
-      <Badge tone={tones[risk]}>
-        <Shield size={12} className="mr-1" />
-        {labels[risk]}
-      </Badge>
-    );
   };
 
   const getHistoryRiskBadge = (risk: PortScanHistoryItem['risk_level']) => {
@@ -417,19 +506,11 @@ export function PortScannerPage() {
 
   const getPortsScanned = () => {
     if (scanMode === 'quick') return QUICK_SCAN_PORTS.length;
-    if (scanMode === 'common') return COMMON_SCAN_PORTS.length;
+    if (scanMode === 'common') return `${COMMON_SCAN_PORTS.length} defined · up to 100 scanned`;
     return customPorts.split(',').filter((p) => p.trim().length > 0).length;
   };
 
-  const getHistoryErrorMessage = (err: unknown, fallback: string): string => {
-    if (err instanceof ApiClientError) {
-      if (err.status === 401) return 'Your session has expired. Please sign in again.';
-      if (err.status === 503) return 'History is temporarily unavailable. Please try again later.';
-      if (err.status === 0) return 'Unable to connect to the backend. Check your connection and try again.';
-      return err.message || fallback;
-    }
-    return fallback;
-  };
+  const getHistoryErrorMessage = (err: unknown, fallback: string): string => mapError(err, fallback);
 
   const fetchHistory = useCallback(async (page: number) => {
     setHistoryLoading(true);
@@ -480,6 +561,7 @@ export function PortScannerPage() {
       if (err instanceof ApiClientError) {
         if (err.status === 401) setDetailError('Your session has expired. Please sign in again.');
         else if (err.status === 404) setDetailError('Scan not found. It may have been deleted or you do not have access.');
+        else if (err.status === 429) setDetailError('Rate limit reached. Please wait and try again.');
         else if (err.status === 0) setDetailError('Unable to connect to the backend. Check your connection and try again.');
         else setDetailError(err.message || 'Unable to load scan detail.');
       } else {
@@ -495,91 +577,99 @@ export function PortScannerPage() {
   return (
     <>
       <PageHeader
-        eyebrow="Attack surface"
-        title="Port Scanner"
-        description="Perform a TCP connect scan against a target host to discover open ports and service banners."
+        eyebrow="Security operations"
+        title="Security Scan"
+        description="Analyze publicly reachable network exposure and available threat intelligence for a domain or public IP. Port risk, IP reputation, and overall threat are separate signals."
         actions={
-          <Button variant="secondary" onClick={handleToggleHistory} disabled={isScanning && !showHistory}>
-            {showHistory ? <ArrowLeft size={16} /> : <Search size={16} />}
-            {showHistory ? 'Back to scanner' : 'History'}
+          <Button variant="secondary" onClick={handleToggleHistory} disabled={isScanning && !showHistory} aria-label={showHistory ? 'Back to security scan' : 'View scan history'}>
+            {showHistory ? <ArrowLeft size={16} aria-hidden="true" /> : <History size={16} aria-hidden="true" />}
+            {showHistory ? 'Back to scan' : 'History'}
           </Button>
         }
       />
 
       {!showHistory ? (
         <>
-          <div className="grid gap-5 xl:grid-cols-[1fr_0.9fr]">
+          {/* ── Form + What will be checked ── */}
+          <div className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
             <Card className="p-5">
-              <p className="font-display text-lg font-semibold">Run scan</p>
-              <form onSubmit={handleScan} className="mt-6 grid gap-4">
-                <label className="grid gap-2 text-sm font-medium">
-                  <span>Target</span>
+              <h2 className="eyebrow">Security scan</h2>
+              <form onSubmit={handleScan} className="mt-4 grid gap-5" noValidate>
+                <div className="grid gap-2">
+                  <label htmlFor="scan-target" className="text-sm font-medium text-on-surface">Target</label>
                   <input
+                    id="scan-target"
                     type="text"
-                    placeholder="example.com or 192.0.2.1"
+                    placeholder="example.com / 1.1.1.1"
                     value={target}
                     onChange={(e) => setTarget(e.target.value)}
                     disabled={isScanning}
                     required
-                    className="h-11 rounded border bg-surface-low px-3 placeholder:text-on-surface-variant/60 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    aria-required="true"
+                    aria-describedby="target-help"
+                    autoComplete="off"
+                    className="h-11 rounded border bg-surface-low px-3 placeholder:text-on-surface-variant/60 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-60"
                   />
-                </label>
+                  <p id="target-help" className="text-xs leading-5 text-on-surface-variant">
+                    Enter a domain or public IP address. CyberShield will analyze its publicly reachable network exposure and available threat intelligence. Private or local targets are blocked.
+                  </p>
+                </div>
 
-                <fieldset className="grid gap-3">
-                  <legend className="text-sm font-medium text-on-surface">Scan mode</legend>
-                  <div className="grid grid-cols-3 gap-2">
-                    {(['quick', 'common', 'custom'] as ScanMode[]).map((mode) => (
+                <fieldset className="grid gap-3" disabled={isScanning} aria-describedby="profile-help">
+                  <legend className="text-sm font-medium text-on-surface">Scan profile</legend>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    {(Object.keys(PROFILE_META) as ScanMode[]).map((mode) => (
                       <button
                         key={mode}
                         type="button"
                         onClick={() => setScanMode(mode)}
                         disabled={isScanning}
-                        className={`h-11 rounded border px-3 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-primary/60 ${
+                        aria-pressed={scanMode === mode}
+                        aria-label={`${PROFILE_META[mode].label}: ${PROFILE_META[mode].detail}`}
+                        className={`rounded border px-3 py-3 text-left transition focus:outline-none focus:ring-2 focus:ring-primary/60 ${
                           scanMode === mode
                             ? 'border-primary/40 bg-primary/10 text-primary'
                             : 'border-outline-variant/70 bg-surface-low text-on-surface-variant hover:bg-surface-high hover:text-on-surface'
                         }`}
                       >
-                        {mode === 'quick' && 'Quick (20 ports)'}
-                        {mode === 'common' && 'Common (100 ports)'}
-                        {mode === 'custom' && 'Custom ports'}
+                        <p className="text-sm font-semibold">{PROFILE_META[mode].label}</p>
+                        <p className="mt-1 text-xs leading-4 text-on-surface-variant">{PROFILE_META[mode].detail}</p>
                       </button>
                     ))}
                   </div>
+                  <p id="profile-help" className="text-xs leading-5 text-on-surface-variant">Quick uses 20 ports; Standard uses a broader set (up to 100 ports enforced server-side); Custom lets you specify ports.</p>
                 </fieldset>
 
                 {scanMode === 'custom' && (
-                  <label className="grid gap-2 text-sm font-medium">
-                    <span>Custom ports (comma-separated)</span>
+                  <div className="grid gap-2">
+                    <label htmlFor="custom-ports" className="text-sm font-medium text-on-surface">Custom ports (comma-separated)</label>
                     <textarea
+                      id="custom-ports"
                       rows={3}
                       placeholder="22, 80, 443, 8080"
                       value={customPorts}
                       onChange={(e) => setCustomPorts(e.target.value)}
                       disabled={isScanning}
-                      className="rounded border bg-surface-low p-3 font-mono text-sm text-on-surface placeholder:text-on-surface-variant/60 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none"
+                      aria-describedby="custom-ports-help"
+                      className="rounded border bg-surface-low p-3 font-mono text-sm text-on-surface placeholder:text-on-surface-variant/60 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none disabled:opacity-60"
                     />
-                    <p className="text-xs leading-5 text-on-surface-variant">
-                      Enter up to 100 ports (1-65535). Duplicates will be removed automatically.
+                    <p id="custom-ports-help" className="text-xs leading-5 text-on-surface-variant">
+                      Enter up to 100 ports (1–65535). Duplicates will be removed automatically.
                     </p>
-                  </label>
+                  </div>
                 )}
 
-                <Button type="submit" disabled={isScanning || !target.trim()} className="w-full">
+                <Button type="submit" disabled={isScanning || !target.trim()} className="w-full" aria-label="Start security scan">
                   {isScanning ? (
-                    <> <Loader2 size={16} className="animate-spin mr-2" /> Scanning… </ >
+                    <> <Loader2 size={16} className="animate-spin mr-2" aria-hidden="true" /> Analyzing… </>
                   ) : (
-                    <> <Play size={16} className="mr-2" /> Start port scan </ >
+                    <> <Play size={16} className="mr-2" aria-hidden="true" /> Start Security Scan </>
                   )}
                 </Button>
 
-                {isScanning && isSlow && (
-                  <SlowRequestNotice elapsedSeconds={elapsedSeconds} />
-                )}
-
                 {error && (
-                  <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 p-3 rounded border">
-                    <AlertCircle size={16} /> {error}
+                  <div role="alert" className="flex items-start gap-2 rounded border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+                    <AlertCircle size={16} className="mt-0.5 shrink-0" aria-hidden="true" /> <span>{error}</span>
                   </div>
                 )}
               </form>
@@ -588,75 +678,110 @@ export function PortScannerPage() {
                 <p className="eyebrow mb-2">Scan configuration</p>
                 <dl className="grid grid-cols-2 gap-2 text-sm">
                   <dt className="text-on-surface-variant">Target</dt>
-                  <dd className="font-mono text-on-surface">{target || '—'}</dd>
-                  <dt className="text-on-surface-variant">Mode</dt>
-                  <dd className="font-mono text-on-surface capitalize">{scanMode}</dd>
+                  <dd className="font-mono text-on-surface break-all">{target || '—'}</dd>
+                  <dt className="text-on-surface-variant">Profile</dt>
+                  <dd className="font-mono text-on-surface capitalize">{scanMode === 'quick' ? 'Quick' : scanMode === 'common' ? 'Standard' : 'Custom'}</dd>
                   <dt className="text-on-surface-variant">Ports to scan</dt>
-                  <dd className="font-mono text-on-surface">{getPortsScanned()}</dd>
+                  <dd className="font-mono text-on-surface">{String(getPortsScanned())}</dd>
                   <dt className="text-on-surface-variant">Method</dt>
                   <dd className="font-mono text-on-surface">TCP connect</dd>
                 </dl>
               </div>
             </Card>
 
-            <Card className="p-5">
-              {result ? (
-                <>
-                  <div className="flex items-start justify-between gap-4">
+            <div className="grid gap-5 content-start">
+              <Card className="p-5">
+                <h3 className="eyebrow mb-3 flex items-center gap-2"><Info size={14} aria-hidden="true" /> What will be checked</h3>
+                <ul className="space-y-3">
+                  <li className="flex gap-3 rounded border bg-surface-low p-3">
+                    <span className="grid h-8 w-8 place-items-center rounded bg-primary/10 text-primary shrink-0"><Radio size={16} aria-hidden="true" /></span>
                     <div>
-                      <p className="text-sm text-on-surface-variant">Port risk level</p>
-                      <div className="mt-3 flex items-baseline gap-4">
-                        <p className="font-display text-4xl font-bold">{result.risk_level.toUpperCase()}</p>
-                        {getRiskBadge(result.risk_level)}
-                      </div>
-                      <p className="mt-2 text-sm text-on-surface-variant">{result.summary}</p>
+                      <p className="text-sm font-semibold">Port Exposure</p>
+                      <p className="text-xs leading-5 text-on-surface-variant">Finds publicly reachable network services.</p>
                     </div>
+                  </li>
+                  <li className="flex gap-3 rounded border bg-surface-low p-3">
+                    <span className="grid h-8 w-8 place-items-center rounded bg-primary/10 text-primary shrink-0"><Globe size={16} aria-hidden="true" /></span>
+                    <div>
+                      <p className="text-sm font-semibold">IP Reputation</p>
+                      <p className="text-xs leading-5 text-on-surface-variant">Checks available reputation information for the resolved public IP.</p>
+                    </div>
+                  </li>
+                  <li className="flex gap-3 rounded border bg-surface-low p-3">
+                    <span className="grid h-8 w-8 place-items-center rounded bg-primary/10 text-primary shrink-0"><Database size={16} aria-hidden="true" /></span>
+                    <div>
+                      <p className="text-sm font-semibold">Threat Intelligence</p>
+                      <p className="text-xs leading-5 text-on-surface-variant">Collects available security evidence from configured intelligence providers.</p>
+                    </div>
+                  </li>
+                  <li className="flex gap-3 rounded border bg-surface-low p-3">
+                    <span className="grid h-8 w-8 place-items-center rounded bg-primary/10 text-primary shrink-0"><Shield size={16} aria-hidden="true" /></span>
+                    <div>
+                      <p className="text-sm font-semibold">Overall Threat</p>
+                      <p className="text-xs leading-5 text-on-surface-variant">Combines the collected evidence into CyberShield’s derived threat assessment.</p>
+                    </div>
+                  </li>
+                </ul>
+                <div className="mt-4 rounded border border-amber-500/20 bg-amber-500/10 p-3">
+                  <p className="text-xs font-semibold text-amber-700 dark:text-amber-300 flex items-center gap-1.5"><AlertTriangle size={12} aria-hidden="true" /> Important</p>
+                  <p className="mt-1 text-xs leading-5 text-on-surface-variant">Port Risk, IP Reputation, and Overall Threat are <span className="font-semibold text-on-surface">different signals</span>. A low port risk does not mean the IP is clean, and UNKNOWN does not mean safe.</p>
+                </div>
+              </Card>
+
+              {/* Right-side scanning or empty or summary */}
+              {isScanning ? (
+                <ScanningState elapsedSeconds={elapsedSeconds} isSlow={isSlow} />
+              ) : result ? (
+                <Card className="p-5">
+                  <p className="eyebrow mb-2">Latest scan summary</p>
+                  <p className="text-sm leading-6 text-on-surface-variant">
+                    Scanned <code className="font-mono break-all">{result.target}</code>
+                    {result.resolved_ip && <span> · Resolved to <code className="font-mono break-all">{result.resolved_ip}</code></span>}
+                    {' · '}{result.scan_duration_ms}ms · {result.ports_scanned} ports
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs font-mono">
+                    <span className="rounded bg-surface-low px-2 py-1 border">Risk: {result.risk_level}</span>
+                    <span className="rounded bg-surface-low px-2 py-1 border">Open: {result.open_ports.filter(p=>p.state==='open').length}</span>
                   </div>
-                  <div className="mt-6 rounded border bg-surface-low p-4">
-                    <p className="eyebrow mb-2">Scan summary</p>
-                    <p className="text-sm leading-6 text-on-surface-variant">
-                      Scanned <code className="font-mono">{result.target}</code>
-                      {result.resolved_ip && <span> · Resolved to <code className="font-mono">{result.resolved_ip}</code></span>}
-                      · {result.scan_duration_ms}ms
-                    </p>
-                  </div>
-                </>
+                </Card>
               ) : (
-                <>
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="text-sm text-on-surface-variant">Port risk level</p>
-                      <p className="mt-3 font-display text-3xl font-bold text-on-surface-variant/40">—</p>
-                    </div>
-                    <Badge tone="primary">Ready</Badge>
+                <Card className="p-5">
+                  <div className="flex flex-col items-center justify-center py-6 text-center">
+                    <span className="mb-3 grid h-12 w-12 place-items-center rounded-full bg-primary/10 text-primary"><ShieldCheck size={22} aria-hidden="true" /></span>
+                    <h3 className="font-display text-base font-semibold">No security scan yet</h3>
+                    <p className="mt-2 max-w-sm text-sm leading-6 text-on-surface-variant">Enter a public domain or IP address above to analyze network exposure and available threat intelligence.</p>
                   </div>
-                  <div className="mt-6 rounded border bg-surface-low p-4">
-                    <p className="eyebrow mb-2">Scan summary</p>
-                    <p className="text-sm leading-6 text-on-surface-variant">Enter a target and start a scan to see results.</p>
-                  </div>
-                </>
+                </Card>
               )}
-            </Card>
+            </div>
           </div>
 
-          {result && (
-            <>
-              <IPReputationCard reputation={result.ip_reputation ?? null} titleEyebrow="IP reputation — AbuseIPDB evidence" />
-              <ThreatIntelligenceCard bundle={result.threat_intelligence ?? null} titleEyebrow="Threat intelligence — multi-provider evidence" />
-              <ThreatAssessmentCard assessment={result.threat_assessment ?? null} titleEyebrow="Overall threat — derived by CyberShield" />
-              <Card className="mt-5">
-                <div className="border-b px-5 py-4">
+          {/* ── Results hierarchy (A-E) ── */}
+          {isScanning ? null : result ? (
+            <div className="mt-6 grid gap-5">
+              {/* A. Overall Threat — most prominent */}
+              <OverallThreatCard assessment={result.threat_assessment ?? null} />
+              {/* B. Port Risk */}
+              <PortRiskCard result={result} />
+              {/* C. IP Reputation */}
+              <IPReputationCard reputation={result.ip_reputation ?? null} titleEyebrow="IP reputation" />
+              {/* D. Threat Intelligence */}
+              <ThreatIntelligenceCard bundle={result.threat_intelligence ?? null} titleEyebrow="Threat intelligence" />
+              {/* E. Technical Port Details */}
+              <Card className="">
+                <div className="border-b px-5 py-4 flex items-center justify-between gap-3">
                   <p className="font-display font-semibold flex items-center gap-2">
-                    <Layers size={18} className="text-primary" /> Open ports
+                    <Layers size={18} className="text-primary" aria-hidden="true" /> Technical port details
                   </p>
+                  <span className="text-xs font-mono text-on-surface-variant">{result.open_ports.length} open · {result.closed_ports} closed · {result.filtered_ports} filtered</span>
                 </div>
                 <div className="p-4">
                   {result.open_ports.length > 0 ? (
                     <>
                       <div className="mb-4 flex flex-wrap gap-2 text-sm text-on-surface-variant">
-                        <span className="px-2 py-1 rounded bg-surface-low font-mono">Open: {result.open_ports.filter(p => p.state === 'open').length}</span>
-                        <span className="px-2 py-1 rounded bg-surface-low font-mono">Closed: {result.closed_ports}</span>
-                        <span className="px-2 py-1 rounded bg-surface-low font-mono">Filtered: {result.filtered_ports}</span>
+                        <span className="px-2 py-1 rounded bg-surface-low font-mono border">Open: {result.open_ports.filter(p => p.state === 'open').length}</span>
+                        <span className="px-2 py-1 rounded bg-surface-low font-mono border">Closed: {result.closed_ports}</span>
+                        <span className="px-2 py-1 rounded bg-surface-low font-mono border">Filtered: {result.filtered_ports}</span>
                       </div>
                       <DataTable
                         headers={['Port', 'Service', 'State', 'Banner']}
@@ -676,25 +801,25 @@ export function PortScannerPage() {
                   )}
                 </div>
               </Card>
-            </>
-          )}
+            </div>
+          ) : null}
         </>
       ) : (
         <>
           <Card className="p-5">
-            <div className="flex items-center justify-between gap-4">
-              <p className="font-display text-lg font-semibold flex items-center gap-2"><History size={18} className="text-primary" /> Scan history</p>
-              <Button variant="secondary" disabled={historyLoading} onClick={() => fetchHistory(historyPage)}>
-                {historyLoading ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              <p className="font-display text-lg font-semibold flex items-center gap-2"><History size={18} className="text-primary" aria-hidden="true" /> Scan history</p>
+              <Button variant="secondary" disabled={historyLoading} onClick={() => fetchHistory(historyPage)} aria-label="Refresh scan history">
+                {historyLoading ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Search size={16} aria-hidden="true" />}
                 Refresh
               </Button>
             </div>
-            <p className="mt-2 text-sm text-on-surface-variant">Your previous port scans, newest first. Select a scan to view full details.</p>
+            <p className="mt-2 text-sm text-on-surface-variant">Your previous security scans, newest first. Select a scan to view full details including threat assessment, IP reputation, and threat intelligence where available.</p>
 
             {historyLoading && !history ? (
               <>
                 {historySlow && <div className="mt-4"><SlowRequestNotice elapsedSeconds={historyElapsed} /></div>}
-                <div className="mt-6 space-y-3">
+                <div className="mt-6 space-y-3" aria-hidden="true">
                   {Array.from({ length: 3 }).map((_, i) => (
                     <div key={i} className="animate-pulse rounded border bg-surface-low p-4">
                       <div className="h-4 w-1/3 rounded bg-surface-bright/30" />
@@ -704,9 +829,9 @@ export function PortScannerPage() {
                 </div>
               </>
             ) : historyError ? (
-              <div className="mt-6 rounded border border-destructive/20 bg-destructive/10 p-4">
+              <div className="mt-6 rounded border border-destructive/20 bg-destructive/10 p-4" role="alert">
                 <div className="flex items-start gap-3">
-                  <AlertCircle size={18} className="mt-0.5 shrink-0 text-destructive" />
+                  <AlertCircle size={18} className="mt-0.5 shrink-0 text-destructive" aria-hidden="true" />
                   <div>
                     <p className="font-medium text-destructive">Unable to load history</p>
                     <p className="mt-1 text-sm text-on-surface-variant">{historyError}</p>
@@ -717,22 +842,22 @@ export function PortScannerPage() {
             ) : history && history.length === 0 ? (
               <div className="mt-6 flex flex-col items-center justify-center rounded border bg-surface-low p-10 text-center">
                 <span className="mb-4 grid h-14 w-14 place-items-center rounded-full bg-primary/10 text-primary">
-                  <Search size={26} />
+                  <Search size={26} aria-hidden="true" />
                 </span>
-                <h2 className="font-display text-lg font-semibold">No port scans yet</h2>
+                <h2 className="font-display text-lg font-semibold">No security scans yet</h2>
                 <p className="mt-2 max-w-sm text-sm leading-6 text-on-surface-variant">
-                  Completed scans will appear here. Run your first port scan to start building history.
+                  Completed scans will appear here. Run your first security scan to start building history.
                 </p>
                 <Button className="mt-5" onClick={handleToggleHistory}>
-                  <Target size={16} /> Run a new scan
+                  <Target size={16} aria-hidden="true" /> Run a new scan
                 </Button>
               </div>
             ) : history && history.length > 0 ? (
               <>
                 {historyLoading && historySlow && <div className="mt-4"><SlowRequestNotice elapsedSeconds={historyElapsed} /></div>}
                 {historyLoading && !historySlow && (
-                  <div className="mt-4 flex items-center gap-2 text-sm text-on-surface-variant">
-                    <Loader2 size={14} className="animate-spin" /> Loading history…
+                  <div className="mt-4 flex items-center gap-2 text-sm text-on-surface-variant" role="status" aria-live="polite">
+                    <Loader2 size={14} className="animate-spin" aria-hidden="true" /> Loading history…
                   </div>
                 )}
                 <div className="mt-6 overflow-x-auto rounded border">
@@ -744,7 +869,7 @@ export function PortScannerPage() {
                         <th className="px-4 py-3 font-medium">Date</th>
                         <th className="px-4 py-3 font-medium">Ports</th>
                         <th className="px-4 py-3 font-medium">Open</th>
-                        <th className="px-4 py-3 font-medium">Risk</th>
+                        <th className="px-4 py-3 font-medium">Port risk</th>
                         <th className="px-4 py-3 font-medium">Status</th>
                         <th className="px-4 py-3 font-medium">Actions</th>
                       </tr>
@@ -752,16 +877,16 @@ export function PortScannerPage() {
                     <tbody>
                       {history.map((item) => (
                         <tr key={item.id} className="border-b last:border-0 hover:bg-surface-high/40">
-                          <td className="px-4 py-3 font-mono font-medium text-on-surface">{item.target}</td>
-                          <td className="px-4 py-3 font-mono text-on-surface-variant">{item.resolved_ip ?? '—'}</td>
+                          <td className="px-4 py-3 font-mono font-medium text-on-surface break-all">{item.target}</td>
+                          <td className="px-4 py-3 font-mono text-on-surface-variant break-all">{item.resolved_ip ?? '—'}</td>
                           <td className="px-4 py-3 text-on-surface-variant">{formatDate(item.created_at)}</td>
                           <td className="px-4 py-3 font-mono text-on-surface-variant">{item.ports_scanned}</td>
                           <td className="px-4 py-3 font-mono text-on-surface-variant">{item.open_port_count}</td>
                           <td className="px-4 py-3">{getHistoryRiskBadge(item.risk_level)}</td>
                           <td className="px-4 py-3">{getStatusBadge(item.status)}</td>
                           <td className="px-4 py-3">
-                            <Button variant="secondary" className="h-8 px-3 text-xs" onClick={() => handleViewDetail(item.id)}>
-                              <Eye size={14} /> View
+                            <Button variant="secondary" className="h-8 px-3 text-xs" onClick={() => handleViewDetail(item.id)} aria-label={`View scan detail for ${item.target}`}>
+                              <Eye size={14} aria-hidden="true" /> View
                             </Button>
                           </td>
                         </tr>
@@ -771,7 +896,7 @@ export function PortScannerPage() {
                 </div>
 
                 {historyMeta && historyMeta.total > historyMeta.limit && (
-                  <div className="mt-4 flex items-center justify-between gap-3">
+                  <div className="mt-4 flex items-center justify-between gap-3 flex-wrap">
                     <p className="text-xs text-on-surface-variant">
                       Page {historyMeta.page} of {totalPages} · {historyMeta.total} scans total
                     </p>
@@ -780,15 +905,17 @@ export function PortScannerPage() {
                         variant="secondary"
                         disabled={historyLoading || historyPage <= 1}
                         onClick={() => fetchHistory(historyPage - 1)}
+                        aria-label="Previous page"
                       >
-                        <ChevronLeft size={16} /> Previous
+                        <ChevronLeft size={16} aria-hidden="true" /> Previous
                       </Button>
                       <Button
                         variant="secondary"
                         disabled={historyLoading || historyPage >= totalPages}
                         onClick={() => fetchHistory(historyPage + 1)}
+                        aria-label="Next page"
                       >
-                        Next <ChevronRight size={16} />
+                        Next <ChevronRight size={16} aria-hidden="true" />
                       </Button>
                     </div>
                   </div>
@@ -799,8 +926,8 @@ export function PortScannerPage() {
 
           {detailLoading && (
             <Card className="mt-5 p-5">
-              <div className="flex items-center gap-2 text-sm text-on-surface-variant">
-                <Loader2 size={16} className="animate-spin" /> Loading scan detail…
+              <div className="flex items-center gap-2 text-sm text-on-surface-variant" role="status" aria-live="polite">
+                <Loader2 size={16} className="animate-spin" aria-hidden="true" /> Loading scan detail…
               </div>
               {detailSlow && <div className="mt-4"><SlowRequestNotice elapsedSeconds={detailElapsed} /></div>}
             </Card>
@@ -808,8 +935,8 @@ export function PortScannerPage() {
 
           {detailError && (
             <Card className="mt-5 p-5">
-              <div className="flex items-start gap-3 rounded border border-destructive/20 bg-destructive/10 p-4">
-                <AlertCircle size={18} className="mt-0.5 shrink-0 text-destructive" />
+              <div className="flex items-start gap-3 rounded border border-destructive/20 bg-destructive/10 p-4" role="alert">
+                <AlertCircle size={18} className="mt-0.5 shrink-0 text-destructive" aria-hidden="true" />
                 <div>
                   <p className="font-medium text-destructive">Unable to load scan detail</p>
                   <p className="mt-1 text-sm text-on-surface-variant">{detailError}</p>
@@ -821,86 +948,66 @@ export function PortScannerPage() {
 
           {detail && (
             <>
-              <Card className="mt-5 p-5">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-sm text-on-surface-variant">Port risk level</p>
-                    <div className="mt-3 flex items-baseline gap-4">
-                      <p className="font-display text-4xl font-bold">{detail.risk_level.toUpperCase()}</p>
-                      {getRiskBadge(detail.risk_level)}
-                    </div>
-                    <p className="mt-2 text-sm text-on-surface-variant">
-                      Historical scan · {formatDate(detail.created_at)}
+              <div className="mt-6 grid gap-5">
+                {/* Historical hierarchy same order A-E */}
+                <OverallThreatCard assessment={detail.threat_assessment ?? null} />
+                <PortRiskCard result={detail} />
+                <IPReputationCard reputation={detail.ip_reputation ?? null} titleEyebrow="IP reputation — historical" />
+                <ThreatIntelligenceCard bundle={detail.threat_intelligence ?? null} titleEyebrow="Threat intelligence — historical" />
+
+                <Card className="">
+                  <div className="border-b px-5 py-4 flex items-center justify-between gap-3 flex-wrap">
+                    <p className="font-display font-semibold flex items-center gap-2">
+                      <Layers size={18} className="text-primary" aria-hidden="true" /> Port findings · {detail.open_ports.length} ports
                     </p>
+                    <span className="text-xs font-mono text-on-surface-variant">Historical · {formatDate(detail.created_at)}</span>
                   </div>
-                  <Button variant="secondary" onClick={() => setDetail(null)}>
-                    <ArrowLeft size={16} /> Close
-                  </Button>
-                </div>
-
-                <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  <div className="rounded border bg-surface-low p-4">
-                    <p className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-on-surface-variant"><Target size={14} /> Target</p>
-                    <p className="mt-2 font-mono text-sm font-semibold text-on-surface">{detail.target}</p>
-                  </div>
-                  <div className="rounded border bg-surface-low p-4">
-                    <p className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-on-surface-variant"><HardDrive size={14} /> Resolved IP</p>
-                    <p className="mt-2 font-mono text-sm font-semibold text-on-surface">{detail.resolved_ip ?? '—'}</p>
-                  </div>
-                  <div className="rounded border bg-surface-low p-4">
-                    <p className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-on-surface-variant"><Clock size={14} /> Duration</p>
-                    <p className="mt-2 font-mono text-sm font-semibold text-on-surface">{detail.scan_duration_ms ?? '—'}ms</p>
-                  </div>
-                  <div className="rounded border bg-surface-low p-4">
-                    <p className="text-xs font-medium uppercase tracking-wide text-on-surface-variant">Scanned</p>
-                    <p className="mt-2 font-mono text-sm font-semibold text-on-surface">{detail.ports_scanned} ports</p>
-                  </div>
-                </div>
-
-                <div className="mt-4 flex flex-wrap gap-2 text-sm">
-                  <span className="rounded bg-surface-low px-3 py-1 font-mono">Open: {detail.open_port_count}</span>
-                  <span className="rounded bg-surface-low px-3 py-1 font-mono">Closed: {detail.closed_port_count}</span>
-                  <span className="rounded bg-surface-low px-3 py-1 font-mono">Filtered: {detail.filtered_port_count}</span>
-                  <span className="rounded bg-surface-low px-3 py-1 font-mono capitalize">Status: {detail.status}</span>
-                </div>
-              </Card>
-
-              <div className="mt-5">
-                <IPReputationCard reputation={detail.ip_reputation ?? null} titleEyebrow="Historical IP reputation (AbuseIPDB)" />
-              </div>
-
-              <div className="mt-5">
-                <ThreatIntelligenceCard bundle={detail.threat_intelligence ?? null} titleEyebrow="Historical threat intelligence" />
-              </div>
-
-              <div className="mt-5">
-                <ThreatAssessmentCard assessment={detail.threat_assessment ?? null} titleEyebrow="Historical overall threat" />
-              </div>
-
-              <Card className="mt-5">
-                <div className="border-b px-5 py-4">
-                  <p className="font-display font-semibold flex items-center gap-2">
-                    <Layers size={18} className="text-primary" /> Port findings · {detail.open_ports.length} ports
-                  </p>
-                </div>
-                <div className="p-4">
-                  {detail.open_ports.length > 0 ? (
-                    <DataTable
-                      headers={['Port', 'Service', 'State', 'Banner']}
-                      rows={detail.open_ports.map((p) => [
-                        String(p.port),
-                        p.service,
-                        p.state,
-                        formatBanner(p.banner),
-                      ])}
-                    />
-                  ) : (
-                    <div className="py-8 text-center">
-                      <p className="text-sm text-on-surface-variant">No port data available.</p>
+                  <div className="p-4">
+                    <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                      <div className="rounded border bg-surface-low p-3">
+                        <p className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-on-surface-variant"><Target size={14} aria-hidden="true" /> Target</p>
+                        <p className="mt-1 font-mono text-sm font-semibold text-on-surface break-all">{detail.target}</p>
+                      </div>
+                      <div className="rounded border bg-surface-low p-3">
+                        <p className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-on-surface-variant"><HardDrive size={14} aria-hidden="true" /> Resolved IP</p>
+                        <p className="mt-1 font-mono text-sm font-semibold text-on-surface break-all">{detail.resolved_ip ?? '—'}</p>
+                      </div>
+                      <div className="rounded border bg-surface-low p-3">
+                        <p className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-on-surface-variant"><Clock size={14} aria-hidden="true" /> Duration</p>
+                        <p className="mt-1 font-mono text-sm font-semibold text-on-surface">{detail.scan_duration_ms ?? '—'}ms</p>
+                      </div>
+                      <div className="rounded border bg-surface-low p-3">
+                        <p className="text-xs font-medium uppercase tracking-wide text-on-surface-variant">Scanned</p>
+                        <p className="mt-1 font-mono text-sm font-semibold text-on-surface">{detail.ports_scanned} ports</p>
+                      </div>
                     </div>
-                  )}
+                    <div className="mb-4 flex flex-wrap gap-2 text-xs font-mono">
+                      <span className="rounded bg-surface-low px-3 py-1 border">Open: {detail.open_port_count}</span>
+                      <span className="rounded bg-surface-low px-3 py-1 border">Closed: {detail.closed_port_count}</span>
+                      <span className="rounded bg-surface-low px-3 py-1 border">Filtered: {detail.filtered_port_count}</span>
+                      <span className="rounded bg-surface-low px-3 py-1 border capitalize">Status: {detail.status}</span>
+                    </div>
+                    {detail.open_ports.length > 0 ? (
+                      <DataTable
+                        headers={['Port', 'Service', 'State', 'Banner']}
+                        rows={detail.open_ports.map((p) => [
+                          String(p.port),
+                          p.service,
+                          p.state,
+                          formatBanner(p.banner),
+                        ])}
+                      />
+                    ) : (
+                      <div className="py-8 text-center">
+                        <p className="text-sm text-on-surface-variant">No port data available.</p>
+                      </div>
+                    )}
+                  </div>
+                </Card>
+                <div className="flex justify-end">
+                  <Button variant="secondary" onClick={() => setDetail(null)} aria-label="Close scan detail"><ArrowLeft size={16} aria-hidden="true" /> Close detail</Button>
                 </div>
-              </Card>
+              </div>
             </>
           )}
         </>
