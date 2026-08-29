@@ -14,8 +14,8 @@ export interface BrandLogoProps {
 
 /**
  * Theme-aware CyberShield brand mark/logo.
- * - Light theme  -> accented asset (light logo / accented mark)
- * - Dark theme   -> monochrome/dark asset
+ * - Full logo (variant="full") -> always accented asset (/cybershield-logo-light.svg) in both light and dark themes
+ * - Mark (variant="mark")      -> theme-aware: light -> /cybershield-mark-light.svg, dark -> /cybershield-mark-dark.svg
  * Follows existing useTheme.effective (including system resolution).
  * Referenced as static public assets — never via dangerouslySetInnerHTML.
  */
@@ -34,9 +34,7 @@ export function BrandLogo({
     ? effective === 'dark'
       ? '/cybershield-mark-dark.svg'
       : '/cybershield-mark-light.svg'
-    : effective === 'dark'
-      ? '/cybershield-logo-dark.svg'
-      : '/cybershield-logo-light.svg';
+    : '/cybershield-logo-light.svg';
 
   const resolvedAlt = decorative ? '' : (alt ?? 'CyberShield');
 

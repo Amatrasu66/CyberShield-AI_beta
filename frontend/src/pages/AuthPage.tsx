@@ -77,7 +77,7 @@ export function AuthPage({ mode }: AuthPageProps) {
       <section className="relative hidden overflow-hidden border-r bg-surface-lowest p-12 lg:block">
         <div className="grid-glow absolute inset-0" />
         <div className="relative flex h-full flex-col justify-between">
-          <BrandLogo className="h-8 w-auto max-w-[190px]" />
+          <BrandLogo className="h-12 w-auto max-w-[280px]" />
           <div className="max-w-md">
             <p className="eyebrow mb-4">Security intelligence</p>
             <h1 className="font-display text-5xl font-bold leading-tight tracking-tight">
@@ -92,7 +92,7 @@ export function AuthPage({ mode }: AuthPageProps) {
       <section className="flex items-center justify-center p-6">
         <div className="w-full max-w-md">
           <Link to="/dashboard" className="mb-10 inline-flex lg:hidden" aria-label="CyberShield — Go to dashboard">
-            <BrandLogo className="h-8 w-auto max-w-[180px]" />
+            <BrandLogo className="h-10 w-auto max-w-[230px]" />
           </Link>
           <p className="eyebrow mb-3">Secure access</p>
           <h2 className="font-display text-3xl font-bold">{content.title}</h2>
