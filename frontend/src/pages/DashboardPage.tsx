@@ -95,7 +95,7 @@ export function DashboardPage({ compact = false }: DashboardPageProps) {
           ))}
         </div>
         <div className="mt-5 grid gap-5 xl:grid-cols-3">
-          <div className="xl:col-span-2">
+          <div className="min-w-0 xl:col-span-2">
             <SecurityActivity activities={[]} loading />
           </div>
         </div>
@@ -213,7 +213,7 @@ export function DashboardPage({ compact = false }: DashboardPageProps) {
         ))}
       </div>
       <div className="mt-5 grid gap-5 xl:grid-cols-3">
-        <div className="xl:col-span-2">
+        <div className="min-w-0 xl:col-span-2">
           <SecurityActivity activities={activity} onRetry={fetchDashboard} />
         </div>
       </div>
