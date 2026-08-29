@@ -6,25 +6,52 @@
 
 @layer base {
   :root {
-    /* Light theme — semantic tokens (RGB channels for <alpha-value> support) */
-    --color-background: 248 247 252;
-    --color-surface: 248 247 252;
-    --color-surface-lowest: 255 255 255;
+    /* Light theme — CyberShield visual identity (Phase 3A-8F) */
+    --color-background: 245 245 255;
+    --color-surface: 245 245 255;
+    --color-surface-lowest: 245 245 255;
     --color-surface-low: 255 255 255;
     --color-surface-container: 255 255 255;
-    --color-surface-high: 233 232 238;
-    --color-surface-bright: 227 224 237;
-    --color-on-surface: 27 27 35;
-    --color-on-surface-variant: 71 70 80;
-    --color-outline: 122 119 134;
-    --color-outline-variant: 205 202 219;
-    --color-primary: 71 70 220;
-    --color-primary-container: 99 102 241;
+    --color-surface-high: 228 223 255;
+    --color-surface-bright: 216 230 255;
+    --color-on-surface: 42 42 74;
+    --color-on-surface-variant: 108 108 138;
+    --color-outline: 224 224 240;
+    --color-outline-variant: 224 224 240;
+    --color-primary: 110 86 207;
+    --color-primary-container: 228 223 255;
     --color-primary-foreground: 255 255 255;
-    --color-secondary: 0 98 158;
+    --color-secondary: 158 140 252;
+    --color-secondary-foreground: 74 64 128;
+    --color-accent: 216 230 255;
+    --color-accent-foreground: 42 42 74;
+    --color-muted: 240 240 250;
+    --color-muted-foreground: 108 108 138;
+    --color-border: 224 224 240;
+    --color-input: 224 224 240;
+    --color-ring: 110 86 207;
+    --color-card: 255 255 255;
+    --color-card-foreground: 42 42 74;
+    --color-popover: 255 255 255;
+    --color-popover-foreground: 42 42 74;
     --color-success: 20 105 61;
-    --color-danger: 186 26 26;
+    --color-danger: 255 84 112;
+    --color-destructive: 255 84 112;
+    --color-destructive-foreground: 255 255 255;
     --color-warning: 122 77 0;
+    --color-chart-1: 110 86 207;
+    --color-chart-2: 158 140 252;
+    --color-chart-3: 93 95 239;
+    --color-chart-4: 124 117 250;
+    --color-chart-5: 71 64 179;
+    --color-sidebar: 245 245 255;
+    --color-sidebar-foreground: 42 42 74;
+    --color-sidebar-primary: 110 86 207;
+    --color-sidebar-primary-foreground: 255 255 255;
+    --color-sidebar-accent: 216 230 255;
+    --color-sidebar-accent-foreground: 42 42 74;
+    --color-sidebar-border: 224 224 240;
+    --color-sidebar-ring: 110 86 207;
   }
   html.dark {
     --color-background: 19 19 27;
@@ -42,9 +69,36 @@
     --color-primary-container: 128 131 255;
     --color-primary-foreground: 16 0 169;
     --color-secondary: 137 206 255;
+    --color-secondary-foreground: 199 196 215;
+    --color-accent: 55 55 78;
+    --color-accent-foreground: 228 225 237;
+    --color-muted: 31 31 39;
+    --color-muted-foreground: 199 196 215;
+    --color-border: 70 69 84;
+    --color-input: 70 69 84;
+    --color-ring: 192 193 255;
+    --color-card: 31 31 39;
+    --color-card-foreground: 228 225 237;
+    --color-popover: 31 31 39;
+    --color-popover-foreground: 228 225 237;
     --color-success: 114 223 165;
     --color-danger: 255 180 171;
+    --color-destructive: 255 180 171;
+    --color-destructive-foreground: 16 0 40;
     --color-warning: 255 183 131;
+    --color-chart-1: 192 193 255;
+    --color-chart-2: 137 206 255;
+    --color-chart-3: 128 131 255;
+    --color-chart-4: 114 223 165;
+    --color-chart-5: 255 183 131;
+    --color-sidebar: 13 13 21;
+    --color-sidebar-foreground: 228 225 237;
+    --color-sidebar-primary: 192 193 255;
+    --color-sidebar-primary-foreground: 16 0 169;
+    --color-sidebar-accent: 41 41 50;
+    --color-sidebar-accent-foreground: 228 225 237;
+    --color-sidebar-border: 70 69 84;
+    --color-sidebar-ring: 192 193 255;
   }
   body { @apply m-0 min-w-[320px] bg-background font-body text-on-surface antialiased; }
   * { @apply border-outline-variant; }
@@ -54,9 +108,10 @@
 @layer components {
   .panel { @apply rounded-lg border bg-surface-container; }
   .eyebrow { @apply font-mono text-xs font-medium uppercase tracking-[0.16em] text-on-surface-variant; }
-  .grid-glow { background-image: linear-gradient(to right, rgb(192 193 255 / 0.035) 1px, transparent 1px), linear-gradient(to bottom, rgb(192 193 255 / 0.035) 1px, transparent 1px); background-size: 32px 32px; }
-  .indeterminate-track { position: relative; height: 4px; width: 100%; overflow: hidden; border-radius: 9999px; background: rgb(192 193 255 / 0.2); }
-  .indeterminate-track::after { content: ''; position: absolute; inset-block: 0; width: 40%; border-radius: 9999px; background: rgb(192 193 255 / 0.9); animation: indeterminate-slide 1.2s ease-in-out infinite; }
+  .grid-glow { background-image: linear-gradient(to right, rgb(var(--color-primary) / 0.06) 1px, transparent 1px), linear-gradient(to bottom, rgb(var(--color-primary) / 0.06) 1px, transparent 1px); background-size: 32px 32px; }
+  html.dark .grid-glow { background-image: linear-gradient(to right, rgb(var(--color-primary) / 0.035) 1px, transparent 1px), linear-gradient(to bottom, rgb(var(--color-primary) / 0.035) 1px, transparent 1px); }
+  .indeterminate-track { position: relative; height: 4px; width: 100%; overflow: hidden; border-radius: 9999px; background: rgb(var(--color-primary) / 0.2); }
+  .indeterminate-track::after { content: ''; position: absolute; inset-block: 0; width: 40%; border-radius: 9999px; background: rgb(var(--color-primary) / 0.9); animation: indeterminate-slide 1.2s ease-in-out infinite; }
 }
 
 @layer utilities {

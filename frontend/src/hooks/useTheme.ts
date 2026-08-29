@@ -25,6 +25,9 @@ function applyTheme(effective: 'light' | 'dark') {
   } else {
     root.classList.remove('dark');
   }
+  // Keep <meta name="theme-color"> in sync for PWA / browser chrome (light: #f5f5ff, dark: #13131b)
+  const meta = document.getElementById('cs-theme-color') as HTMLMetaElement | null;
+  if (meta) meta.content = effective === 'dark' ? '#13131b' : '#f5f5ff';
 }
 
 export function useTheme() {

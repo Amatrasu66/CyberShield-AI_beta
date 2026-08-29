@@ -7,7 +7,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CyberShield — Cybersecurity Platform</title>
     <meta name="description" content="CyberShield is a cybersecurity platform for security assessments, threat intelligence, and guided remediation — scan, analyze, and act with confidence." />
-    <meta name="theme-color" content="#13131b" />
+    <meta name="theme-color" content="#13131b" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f5f5ff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" id="cs-theme-color" content="#13131b" />
     <script>
       (function () {
         try {
@@ -18,6 +20,8 @@
           var root = document.documentElement;
           if (e === 'dark') root.classList.add('dark');
           else root.classList.remove('dark');
+          var m = document.getElementById('cs-theme-color');
+          if (m) m.setAttribute('content', e === 'dark' ? '#13131b' : '#f5f5ff');
         } catch (e) {}
       })();
     </script>
