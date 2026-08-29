@@ -8,8 +8,21 @@
     <title>CyberShield — Cybersecurity Platform</title>
     <meta name="description" content="CyberShield is a cybersecurity platform for security assessments, threat intelligence, and guided remediation — scan, analyze, and act with confidence." />
     <meta name="theme-color" content="#13131b" />
+    <script>
+      (function () {
+        try {
+          var k = 'cybershield-theme';
+          var r = localStorage.getItem(k);
+          var p = r === 'light' || r === 'dark' || r === 'system' ? r : 'dark';
+          var e = p !== 'system' ? p : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+          var root = document.documentElement;
+          if (e === 'dark') root.classList.add('dark');
+          else root.classList.remove('dark');
+        } catch (e) {}
+      })();
+    </script>
   </head>
-  <body class="bg-[#0a0f1d] text-gray-100 antialiased">
+  <body class="bg-background text-on-surface antialiased">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
