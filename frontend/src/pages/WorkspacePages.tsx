@@ -108,7 +108,7 @@ export function ProfilePage({ editable = true }: ProfilePageProps) {
           </span>
           <h2 className="mt-4 font-display text-xl font-semibold">{displayName || 'Unnamed user'}</h2>
           <p className="mt-1 text-sm text-on-surface-variant">{email ?? 'No email'}</p>
-          <Badge tone="success">{role ?? 'Student'}</Badge>
+          <Badge tone="success">{role ?? '—'}</Badge>
           <dl className="mt-4 w-full space-y-2 border-t pt-4 text-left text-sm">
             <div className="flex justify-between gap-2">
               <dt className="text-on-surface-variant">Role</dt>

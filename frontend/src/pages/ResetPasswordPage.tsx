@@ -1,7 +1,7 @@
 import { useState, type FormEvent, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
-import { BrandLogo, BrandMark } from '../components/BrandLogo';
+import { BrandLockup, BrandMark } from '../components/BrandLogo';
 import { PasswordInput } from '../components/PasswordInput';
 import { Button } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
@@ -92,7 +92,7 @@ export function ResetPasswordPage() {
       <section className="relative hidden overflow-hidden border-r bg-surface-lowest p-12 lg:block">
         <div className="grid-glow absolute inset-0" />
         <div className="relative flex h-full flex-col justify-between">
-          <BrandLogo className="h-8 w-auto max-w-[190px]" />
+          <BrandLockup size="login" />
           <div className="max-w-md">
             <p className="eyebrow mb-4">Security intelligence</p>
             <h1 className="font-display text-5xl font-bold leading-tight tracking-tight">
@@ -109,7 +109,7 @@ export function ResetPasswordPage() {
       <section className="flex items-center justify-center p-6">
         <div className="w-full max-w-md">
           <Link to="/login" className="mb-10 inline-flex lg:hidden" aria-label="CyberShield — Go to dashboard">
-            <BrandLogo className="h-8 w-auto max-w-[180px]" />
+            <BrandLockup size="sidebar" />
           </Link>
           <p className="eyebrow mb-3">New credentials</p>
           <h2 className="font-display text-3xl font-bold">Set a new password</h2>
