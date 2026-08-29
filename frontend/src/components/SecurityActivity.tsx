@@ -350,12 +350,14 @@ export function SecurityActivity({ activities, loading = false, error = null, on
         </Link>
       </div>
 
-      <ol className="mt-3 divide-y divide-outline-variant/30" role="list">
-        {display.map((a, idx) => {
-          const key = `${a.created_at ?? idx}-${a.target ?? getTitle(a)}-${idx}`;
-          return <ActivityRow key={key} activity={a} />;
-        })}
-      </ol>
+      <div className="mt-3 max-h-[22rem] overflow-x-hidden overflow-y-auto overscroll-y-contain pr-1 -mr-1">
+        <ol className="divide-y divide-outline-variant/30" role="list">
+          {display.map((a, idx) => {
+            const key = `${a.created_at ?? idx}-${a.target ?? getTitle(a)}-${idx}`;
+            return <ActivityRow key={key} activity={a} />;
+          })}
+        </ol>
+      </div>
     </Card>
   );
 }

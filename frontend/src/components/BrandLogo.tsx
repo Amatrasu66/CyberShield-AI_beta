@@ -67,11 +67,13 @@ export interface BrandLockupProps {
   readonly className?: string;
   /** Optional extra classes for the mark image */
   readonly markClassName?: string;
+  /** When true, always use the accented light mark (e.g. sidebar) regardless of theme */
+  readonly useAccentedMark?: boolean;
 }
 
-export function BrandLockup({ size = 'sidebar', className, markClassName }: BrandLockupProps) {
+export function BrandLockup({ size = 'sidebar', className, markClassName, useAccentedMark = false }: BrandLockupProps) {
   const { effective } = useTheme();
-  const src = effective === 'dark' ? '/cybershield-mark-dark.svg' : '/cybershield-mark-light.svg';
+  const src = useAccentedMark ? '/cybershield-mark-light.svg' : effective === 'dark' ? '/cybershield-mark-dark.svg' : '/cybershield-mark-light.svg';
 
   const isLogin = size === 'login';
 
