@@ -6,7 +6,7 @@ function HeroVisualFallback() {
   return (
     <div
       aria-hidden="true"
-      className="h-[340px] w-full animate-pulse rounded-xl bg-surface-high/40 sm:h-[440px] lg:h-[600px]"
+      className="h-[340px] w-full animate-pulse rounded-xl bg-surface-high/40 sm:h-[440px] lg:h-[540px]"
     />
   );
 }
@@ -41,7 +41,7 @@ export function HeroSection() {
             aria-hidden="true"
             className="pointer-events-none absolute inset-0 bg-[radial-gradient(closest-side,rgba(99,102,241,0.22),transparent)] blur-2xl"
           />
-          <div aria-hidden="true" className="relative h-[340px] sm:h-[440px] lg:h-[600px]">
+          <div aria-hidden="true" className="relative h-[340px] sm:h-[440px] lg:h-[540px]">
             <Suspense fallback={<HeroVisualFallback />}>
               <HeroVisual />
             </Suspense>
