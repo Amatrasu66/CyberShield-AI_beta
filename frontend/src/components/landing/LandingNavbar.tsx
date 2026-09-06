@@ -172,16 +172,20 @@ export function LandingNavbar() {
       data-testid="landing-navbar"
       onFocusCapture={() => setHidden(false)}
       className={cn(
-        'fixed inset-x-0 top-0 z-50 border-b border-border/60 bg-background/85 backdrop-blur',
+        // Seamless floating navigation: no border, no divider, no shadow,
+        // no card/glass/blur, no navbar background. Transparent so the page
+        // background continues uninterrupted behind and around the content.
+        // Only the content itself is visible. Auto-hide uses transform only.
+        'fixed inset-x-0 top-0 z-50 border-0 bg-transparent shadow-none',
         'transition-transform duration-300 ease-out will-change-transform',
         visuallyHidden && '-translate-y-full',
       )}
     >
       <nav
         aria-label="Primary"
-        className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-6 px-4 sm:px-6 lg:px-8"
+        className="mx-auto flex h-16 w-full max-w-6xl min-w-0 items-center justify-between gap-3 px-4 sm:gap-6 sm:px-6 lg:px-8"
       >
-        <Link to="/" aria-label="CyberShield — Home" className="shrink-0">
+        <Link to="/" aria-label="CyberShield — Home" className="min-w-0 shrink">
           <BrandLockup size="sidebar" />
         </Link>
 
@@ -219,7 +223,10 @@ export function LandingNavbar() {
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
             transition={{ type: 'spring', stiffness: 380, damping: 34 }}
-            className="overflow-hidden border-t border-border/60 lg:hidden"
+            // Mobile panel: no top divider, no blur/shadow/border. Solid
+            // page background (same as body) so items stay readable over the
+            // hero while the closed navbar itself stays seamless/transparent.
+            className="overflow-hidden bg-background lg:hidden"
           >
             <div className="max-h-[calc(100vh-4rem)] space-y-1 overflow-y-auto px-4 py-4 sm:px-6">
               <p className="eyebrow px-3 pb-1">Capabilities</p>

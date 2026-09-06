@@ -26,11 +26,11 @@ export function HeroSection() {
           navbar while retaining premium editorial whitespace. No spacer hack:
           the fixed navbar reserves a constant h-16 via LandingPage. */}
       <div className="mx-auto grid max-w-6xl items-center gap-10 px-4 pb-14 pt-10 sm:px-6 sm:pt-12 lg:grid-cols-[1.05fr_0.95fr] lg:gap-12 lg:px-8 lg:pb-20 lg:pt-14">
-        <div>
+        <div className="min-w-0 max-w-2xl">
           <p className="eyebrow mb-4">CyberShield / Security Intelligence</p>
           <h1
             id="landing-hero-heading"
-            className="font-display text-4xl font-bold leading-[1.08] tracking-tight text-on-surface sm:text-5xl lg:text-6xl"
+            className="max-w-[22ch] break-words font-display text-[clamp(1.875rem,1.4rem+2.8vw,3.25rem)] font-bold leading-[1.08] tracking-tight text-on-surface text-balance"
           >
             Know your exposure. Act with confidence.
           </h1>
