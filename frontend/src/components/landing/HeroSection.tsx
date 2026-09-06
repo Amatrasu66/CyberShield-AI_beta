@@ -23,7 +23,7 @@ export function HeroSection() {
           grid stays items-center with lg:pt-0 / lg:pb-8; mobile, typography,
           copy, topology, and navbar untouched. */}
       <div className="mx-auto grid max-w-6xl items-center gap-8 px-4 pb-12 pt-6 sm:px-6 sm:pt-8 lg:grid-cols-[1.05fr_0.95fr] lg:gap-12 lg:px-8 lg:pb-8 lg:pt-0">
-        <div className="min-w-0 max-w-2xl lg:self-start lg:pt-20">
+        <div className="min-w-0 max-w-2xl lg:self-start lg:pt-32">
           <p className="eyebrow mb-4">CyberShield / Security Intelligence</p>
           <h1
             id="landing-hero-heading"
