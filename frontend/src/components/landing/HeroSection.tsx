@@ -22,16 +22,17 @@ export function HeroSection() {
       data-testid="hero-section"
       className="relative overflow-hidden"
     >
-      {/* Phase 7.4 — top-whitespace correction. Cause: the fixed-navbar
-          spacer (h-16 = 64px, correct — keep) stacked with the hero inner
-          top padding (pt-10 / sm:pt-12 / lg:pt-14 = 40/48/56px), producing
-          104–120px of empty space before the eyebrow. On desktop the
-          items-center centering of the copy column against the 600px visual
-          pushed the headline down further. Fix: reduce the inner top
-          padding only (spacer untouched, no negative margins), keep
-          items-center so the two columns stay vertically balanced, and
-          keep bottom padding slightly larger than top for balance. */}
-      <div className="mx-auto grid max-w-6xl items-center gap-8 px-4 pb-12 pt-6 sm:px-6 sm:pt-8 lg:grid-cols-[1.05fr_0.95fr] lg:gap-12 lg:px-8 lg:pb-16 lg:pt-10">
+      {/* Phase 7.5 — desktop hero vertical-spacing fix. Cause: items-center
+          centered the left copy column against the 600px right visual,
+          pushing the eyebrow/headline downward; lg:pt-10 (40px) added
+          further top whitespace. Fix: keep base items-center for
+          mobile/tablet, switch desktop to lg:items-start so the copy
+          begins near the top of the grid while the topology stays in its
+          existing right-side position; reduce desktop top padding to
+          lg:pt-6 (24px) for a small controlled navbar→eyebrow gap. No
+          negative margins, absolute positioning, transforms, JS, or
+          topology changes. */}
+      <div className="mx-auto grid max-w-6xl items-center gap-8 px-4 pb-12 pt-6 sm:px-6 sm:pt-8 lg:grid-cols-[1.05fr_0.95fr] lg:items-start lg:gap-12 lg:px-8 lg:pb-16 lg:pt-6">
         <div className="min-w-0 max-w-2xl">
           <p className="eyebrow mb-4">CyberShield / Security Intelligence</p>
           <h1
