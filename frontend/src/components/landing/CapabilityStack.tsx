@@ -2,10 +2,10 @@ import { useRef, type CSSProperties } from 'react';
 import { motion, useReducedMotion, useScroll, useTransform } from 'framer-motion';
 import type { MotionValue } from 'framer-motion';
 import {
-  Binary,
   Database,
   FileBarChart,
   KeyRound,
+  LockKeyhole,
   Network,
   ScanLine,
   ScrollText,
@@ -69,7 +69,7 @@ const CAPABILITIES: readonly Capability[] = [
     description: 'Explore cryptographic algorithms and security concepts interactively.',
     to: '/cryptography-lab',
     action: 'Open Lab',
-    icon: Binary,
+    icon: LockKeyhole,
   },
   {
     number: '08',
