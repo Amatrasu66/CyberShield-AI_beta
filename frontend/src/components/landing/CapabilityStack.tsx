@@ -11,7 +11,6 @@ import {
   ScrollText,
   ShieldAlert,
 } from 'lucide-react';
-import { cn } from '../../utils/cn';
 import { CapabilityCard, type Capability } from './CapabilityCard';
 
 const CAPABILITIES: readonly Capability[] = [
@@ -86,34 +85,38 @@ interface StackCardProps {
   readonly index: number;
   readonly total: number;
   readonly progress: MotionValue<number>;
-  readonly reducedMotion: boolean;
 }
 
 /**
- * One sticky card in the stack. Scale is derived from shared scroll progress
- * (a MotionValue — no per-frame React state). First card settles at ~0.72,
- * last card stays at 1.0.
+ * One card in the Skiper-style pile. Each wrapper is a direct sticky child
+ * of the tall stack container, so earlier cards pin to the viewport while
+ * later cards scroll up and cover them. Scale is derived from the shared
+ * scroll progress (a MotionValue — no per-frame React state): the first
+ * card settles smallest, the last stays at 1.0, giving clear depth.
  */
-function StackCard({ capability, index, total, progress, reducedMotion }: StackCardProps) {
-  const targetScale = 1 - (total - 1 - index) * 0.04;
+function StackCard({ capability, index, total, progress }: StackCardProps) {
+  const targetScale = 1 - (total - 1 - index) * 0.05;
   const scale = useTransform(progress, [index / total, 1], [1, targetScale]);
 
   return (
     <div
-      className={cn('mb-6 last:mb-0', !reducedMotion && 'sticky top-[calc(4.5rem+var(--card-index)*0.75rem)] lg:top-[calc(6rem+var(--card-index)*1.5rem)]')}
-      style={{ '--card-index': index } as CSSProperties}
+      className="sticky top-[calc(4.5rem+var(--stack-offset))] mb-[7svh] last:mb-0 lg:top-[calc(5.5rem+var(--stack-offset))]"
+      style={{ '--stack-offset': `${index * 0.875}rem`, zIndex: index } as CSSProperties}
     >
-      <motion.div style={reducedMotion ? undefined : { scale }} className="origin-top">
-        <CapabilityCard capability={capability} />
+      <motion.div style={{ scale }} className="origin-top will-change-transform">
+        <CapabilityCard capability={capability} index={index} total={total} />
       </motion.div>
     </div>
   );
 }
 
 /**
- * Eight-card sticky stack adapted from the Skiper16 mechanics (useScroll +
- * useTransform + sticky positioning) to the page's native document scroll.
- * No Lenis, no nested scroll containers, no images or canvas.
+ * Eight-card sticky pile adapted from the Skiper16 mechanics (useScroll +
+ * per-card useTransform + sticky positioning) to the page's native document
+ * scroll. The container is a tall scroll region: Card 01 is the only
+ * fully-visible card on entry, and Cards 02–08 progressively slide over the
+ * pinned stack as the user scrolls. No Lenis, no nested scroll containers,
+ * no images or canvas, no new dependencies.
  */
 export function CapabilityStack() {
   const container = useRef<HTMLDivElement>(null);
@@ -123,8 +126,27 @@ export function CapabilityStack() {
   });
   const reducedMotion = useReducedMotion() ?? false;
 
+  if (reducedMotion) {
+    return (
+      <div className="grid gap-5" data-testid="capability-stack">
+        {CAPABILITIES.map((capability, index) => (
+          <CapabilityCard
+            key={capability.number}
+            capability={capability}
+            index={index}
+            total={CAPABILITIES.length}
+          />
+        ))}
+      </div>
+    );
+  }
+
   return (
-    <div ref={container} className="relative" data-testid="capability-stack">
+    <div
+      ref={container}
+      className="relative pt-[6svh] pb-[10svh]"
+      data-testid="capability-stack"
+    >
       {CAPABILITIES.map((capability, index) => (
         <StackCard
           key={capability.number}
@@ -132,7 +154,6 @@ export function CapabilityStack() {
           index={index}
           total={CAPABILITIES.length}
           progress={scrollYProgress}
-          reducedMotion={reducedMotion}
         />
       ))}
     </div>

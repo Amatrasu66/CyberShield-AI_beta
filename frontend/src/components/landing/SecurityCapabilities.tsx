@@ -6,10 +6,10 @@ export function SecurityCapabilities() {
       aria-labelledby="landing-capabilities-heading"
       id="capabilities"
       data-testid="security-capabilities"
-      className="relative"
+      className="relative overflow-x-clip"
     >
-      <div className="mx-auto grid max-w-6xl gap-10 px-4 py-16 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:gap-14 lg:px-8 lg:py-24">
-        <div className="lg:sticky lg:top-28 lg:self-start">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+        <div className="pt-16 lg:pt-24">
           <p className="eyebrow mb-4">Capabilities</p>
           <h2
             id="landing-capabilities-heading"
@@ -19,10 +19,18 @@ export function SecurityCapabilities() {
             <br />
             without the noise.
           </h2>
-          <p className="mt-5 max-w-md text-sm leading-6 text-on-surface-variant">
-            Eight focused modules from the CyberShield workspace. Each one runs against systems you own or
-            have permission to test.
-          </p>
+          <div className="mt-5 flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
+            <p className="max-w-md text-sm leading-6 text-on-surface-variant">
+              Eight focused modules from the CyberShield workspace. Each one runs against systems you
+              own or have permission to test.
+            </p>
+            <p
+              aria-hidden="true"
+              className="shrink-0 font-mono text-[11px] font-medium uppercase tracking-[0.16em] text-on-surface-variant"
+            >
+              Scroll to explore — 08 modules
+            </p>
+          </div>
         </div>
         <CapabilityStack />
       </div>
