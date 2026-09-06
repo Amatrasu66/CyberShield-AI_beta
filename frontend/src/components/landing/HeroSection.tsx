@@ -22,17 +22,13 @@ export function HeroSection() {
       data-testid="hero-section"
       className="relative overflow-hidden"
     >
-      {/* Phase 7.5 — desktop hero vertical-spacing fix. Cause: items-center
-          centered the left copy column against the 600px right visual,
-          pushing the eyebrow/headline downward; lg:pt-10 (40px) added
-          further top whitespace. Fix: keep base items-center for
-          mobile/tablet, switch desktop to lg:items-start so the copy
-          begins near the top of the grid while the topology stays in its
-          existing right-side position; reduce desktop top padding to
-          lg:pt-6 (24px) for a small controlled navbar→eyebrow gap. No
-          negative margins, absolute positioning, transforms, JS, or
-          topology changes. */}
-      <div className="mx-auto grid max-w-6xl items-center gap-8 px-4 pb-12 pt-6 sm:px-6 sm:pt-8 lg:grid-cols-[1.05fr_0.95fr] lg:items-start lg:gap-12 lg:px-8 lg:pb-16 lg:pt-6">
+      {/* Phase 7.6 — revert 7.5 alignment, reduce top padding only. 7.5's
+          lg:items-start pushed the copy unnaturally to the top; the
+          pre-7.5 items-center centering was visually correct. Fix: remove
+          lg:items-start (restore items-center), reduce desktop top padding
+          to lg:pt-0. Mobile/tablet (pt-6, sm:pt-8), lg:px-8, lg:pb-16,
+          typography, copy, navbar, and topology untouched. */}
+      <div className="mx-auto grid max-w-6xl items-center gap-8 px-4 pb-12 pt-6 sm:px-6 sm:pt-8 lg:grid-cols-[1.05fr_0.95fr] lg:gap-12 lg:px-8 lg:pb-16 lg:pt-0">
         <div className="min-w-0 max-w-2xl">
           <p className="eyebrow mb-4">CyberShield / Security Intelligence</p>
           <h1
