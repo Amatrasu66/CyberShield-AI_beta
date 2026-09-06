@@ -194,9 +194,12 @@ export function LandingNavbar() {
         </div>
 
         <div className="hidden shrink-0 items-center gap-2 lg:flex">
+          {/* Phase 7.7 — quiet secondary action: neutral text by default,
+              subtle surface tint + stronger text on hover (never the
+              primary CTA treatment), design-token focus ring retained. */}
           <Link
             to="/login"
-            className="rounded-full px-4 py-2 text-sm font-medium text-on-surface-variant transition-colors hover:text-on-surface"
+            className="rounded-full px-4 py-2 text-sm font-medium text-on-surface-variant transition-colors hover:bg-surface-high/50 hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             Log in
           </Link>
