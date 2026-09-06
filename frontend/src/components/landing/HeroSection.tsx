@@ -8,7 +8,7 @@ function HeroVisualFallback() {
   return (
     <div
       aria-hidden="true"
-      className="h-[300px] w-full animate-pulse rounded-xl bg-surface-high/40 sm:h-[380px] lg:h-[520px]"
+      className="h-[340px] w-full animate-pulse rounded-xl bg-surface-high/40 sm:h-[440px] lg:h-[600px]"
     />
   );
 }
@@ -22,7 +22,10 @@ export function HeroSection() {
       data-testid="hero-section"
       className="relative overflow-hidden"
     >
-      <div className="mx-auto grid max-w-6xl items-center gap-10 px-4 py-16 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:gap-12 lg:px-8 lg:py-24">
+      {/* Phase 7.3 — tightened top spacing so the hero sits closer to the
+          navbar while retaining premium editorial whitespace. No spacer hack:
+          the fixed navbar reserves a constant h-16 via LandingPage. */}
+      <div className="mx-auto grid max-w-6xl items-center gap-10 px-4 pb-14 pt-10 sm:px-6 sm:pt-12 lg:grid-cols-[1.05fr_0.95fr] lg:gap-12 lg:px-8 lg:pb-20 lg:pt-14">
         <div>
           <p className="eyebrow mb-4">CyberShield / Security Intelligence</p>
           <h1
@@ -52,7 +55,7 @@ export function HeroSection() {
             aria-hidden="true"
             className="pointer-events-none absolute inset-0 bg-[radial-gradient(closest-side,rgba(99,102,241,0.22),transparent)] blur-2xl"
           />
-          <div aria-hidden="true" className="relative h-[300px] sm:h-[380px] lg:h-[520px]">
+          <div aria-hidden="true" className="relative h-[340px] sm:h-[440px] lg:h-[600px]">
             <Suspense fallback={<HeroVisualFallback />}>
               <HeroVisual />
             </Suspense>

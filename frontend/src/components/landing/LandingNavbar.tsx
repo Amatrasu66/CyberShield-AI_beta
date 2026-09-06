@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
@@ -115,15 +115,67 @@ function MobileLink({ to, onNavigate, children, className }: MobileLinkProps) {
 export function LandingNavbar() {
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
+  // Phase 7.3 — auto-hiding navbar: visible at top, slides away on scroll
+  // down, returns on scroll up. Transform-only animation (no layout shift),
+  // stays in the DOM for keyboard users (no display:none).
+  const [hidden, setHidden] = useState(false);
+  const lastScrollY = useRef(0);
+  const ticking = useRef(false);
 
   function closeMobile() {
     setMobileOpen(false);
   }
 
+  useEffect(() => {
+    lastScrollY.current = window.scrollY || 0;
+    const TOP_LOCK_PX = 24; // force visible near the top
+    const HIDE_AFTER_PX = 120; // only hide after meaningful downward scroll
+    const DEAD_ZONE_PX = 4; // ignore tiny/jittery movements
+
+    const update = () => {
+      ticking.current = false;
+      const y = window.scrollY || 0;
+      const prev = lastScrollY.current;
+      const delta = y - prev;
+      lastScrollY.current = y;
+      if (y <= TOP_LOCK_PX) {
+        setHidden(false);
+        return;
+      }
+      if (Math.abs(delta) < DEAD_ZONE_PX) return;
+      if (delta > 0 && y > HIDE_AFTER_PX) {
+        setHidden(true);
+      } else if (delta < 0) {
+        setHidden(false);
+      }
+    };
+
+    const onScroll = () => {
+      if (!ticking.current) {
+        ticking.current = true;
+        window.requestAnimationFrame(update);
+      }
+    };
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+    };
+  }, []);
+
+  // Keep the bar visible while the mobile menu is open or while keyboard
+  // focus is inside the navigation (hidden state is purely visual).
+  const visuallyHidden = hidden && !mobileOpen;
+
   return (
     <header
       data-testid="landing-navbar"
-      className="sticky top-0 z-50 border-b border-border/60 bg-background/85 backdrop-blur"
+      onFocusCapture={() => setHidden(false)}
+      className={cn(
+        'fixed inset-x-0 top-0 z-50 border-b border-border/60 bg-background/85 backdrop-blur',
+        'transition-transform duration-300 ease-out will-change-transform',
+        visuallyHidden && '-translate-y-full',
+      )}
     >
       <nav
         aria-label="Primary"

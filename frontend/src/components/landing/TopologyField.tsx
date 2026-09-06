@@ -151,7 +151,8 @@ export function TopologyField() {
       attributeFilter: ['class'],
     });
 
-    // --- Container-relative sizing: compact sphere, lots of negative space ---
+    // --- Container-relative sizing: larger sphere (~26% up from 0.475),
+    // still well inside the container so it never touches viewport edges.
     const resize = () => {
       const width = mount.clientWidth || 1;
       const height = mount.clientHeight || 1;
@@ -159,8 +160,8 @@ export function TopologyField() {
       camera.updateProjectionMatrix();
       renderer.setSize(width, height, false);
       // World-space radius proportional to the container so the sphere stays
-      // compact (~2/3 of the minor axis) at any breakpoint.
-      const radius = Math.min(width, height) * 0.475;
+      // balanced at any breakpoint. 0.60 ≈ +26% over the Phase 7.2 value.
+      const radius = Math.min(width, height) * 0.6;
       group.scale.set(radius, radius, radius);
       group.position.set(0, 0, 0);
     };
@@ -171,11 +172,52 @@ export function TopologyField() {
     window.addEventListener('resize', resize);
 
     // --- Animation: authored loop (refs only, no React state per frame) ---
+    // Phase 7.3 — subtle additive pointer parallax. Base authored rotation
+    // keeps running; pointer input only adds a small damped offset.
     let time = 0;
     let frameId = 0;
+    let targetTiltX = 0;
+    let targetTiltY = 0;
+    let currentTiltX = 0;
+    let currentTiltY = 0;
+    const MAX_TILT = 0.25; // radians — deliberately small / physical
+    const DAMPING = 0.06;
+
+    const setPointerFromEvent = (clientX: number, clientY: number) => {
+      if (reducedMotion) return;
+      const rect = mount.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+      const nx = ((clientX - rect.left) / rect.width) * 2 - 1;
+      const ny = ((clientY - rect.top) / rect.height) * 2 - 1;
+      const clampedX = Math.max(-1, Math.min(1, nx));
+      const clampedY = Math.max(-1, Math.min(1, ny));
+      targetTiltY = clampedX * MAX_TILT;
+      targetTiltX = -clampedY * MAX_TILT;
+    };
+    const resetPointer = () => {
+      targetTiltX = 0;
+      targetTiltY = 0;
+    };
+    const handlePointerMove = (event: PointerEvent) => {
+      setPointerFromEvent(event.clientX, event.clientY);
+    };
+
+    // Pointer Events cover mouse + touch drag. No preventDefault is called,
+    // and the container uses touch-action: pan-y so vertical page scrolling
+    // on mobile stays natural — the topology never traps the user.
+    if (!reducedMotion) {
+      mount.addEventListener('pointermove', handlePointerMove);
+      mount.addEventListener('pointerleave', resetPointer);
+      mount.addEventListener('pointercancel', resetPointer);
+    }
+
     const renderFrame = () => {
-      group.rotation.y = time * 0.0018;
-      group.rotation.x = 0.2;
+      if (!reducedMotion) {
+        currentTiltX += (targetTiltX - currentTiltX) * DAMPING;
+        currentTiltY += (targetTiltY - currentTiltY) * DAMPING;
+      }
+      group.rotation.y = time * 0.0018 + currentTiltY;
+      group.rotation.x = 0.2 + currentTiltX;
       group.rotation.z = time * 0.0006;
       const groupScale = group.scale.x || 1;
       for (const mesh of nodes) {
@@ -209,6 +251,9 @@ export function TopologyField() {
     return () => {
       cancelAnimationFrame(frameId);
       window.removeEventListener('resize', resize);
+      mount.removeEventListener('pointermove', handlePointerMove);
+      mount.removeEventListener('pointerleave', resetPointer);
+      mount.removeEventListener('pointercancel', resetPointer);
       resizeObserver?.disconnect();
       themeObserver?.disconnect();
       group.traverse((child) => {
@@ -232,13 +277,14 @@ export function TopologyField() {
       ref={mountRef}
       aria-hidden="true"
       data-testid="hero-topology"
-      className="pointer-events-none relative h-full w-full overflow-hidden bg-transparent"
+      className="relative h-full w-full touch-pan-y overflow-hidden bg-transparent"
+      style={{ touchAction: 'pan-y' }}
     >
       {/* Whisper of a local radial lift so the field melts into the hero —
           not a card, no border, fully transparent edges. */}
       <div
         aria-hidden="true"
-        className="absolute inset-0 bg-[radial-gradient(closest-side,rgba(58,67,88,0.10),transparent)] dark:bg-[radial-gradient(closest-side,rgba(255,255,255,0.06),transparent)]"
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(closest-side,rgba(58,67,88,0.10),transparent)] dark:bg-[radial-gradient(closest-side,rgba(255,255,255,0.06),transparent)]"
       />
     </div>
   );
