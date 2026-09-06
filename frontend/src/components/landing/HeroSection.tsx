@@ -18,13 +18,13 @@ export function HeroSection() {
       data-testid="hero-section"
       className="relative overflow-hidden"
     >
-      {/* Phase 7.8 — desktop-only text-block nudge. Grid alignment
-          (items-center) and padding (lg:pt-0) proven correct — untouched.
-          lg:-translate-y-4 on the left copy wrapper only lifts the
-          eyebrow/headline/paragraph visually (-16px at lg+) without
-          affecting document flow, topology, or mobile/tablet. */}
-      <div className="mx-auto grid max-w-6xl items-center gap-8 px-4 pb-12 pt-6 sm:px-6 sm:pt-8 lg:grid-cols-[1.05fr_0.95fr] lg:gap-12 lg:px-8 lg:pb-16 lg:pt-0">
-        <div className="min-w-0 max-w-2xl lg:-translate-y-4">
+      {/* Phase 7.9 — match reference: remove 7.8's lg:-translate-y-4
+          (grid stays items-center), compact desktop vertical footprint via
+          lg:pb-16 → lg:pb-8 so text + topology sit higher with moderate
+          controlled navbar gap. lg:pt-0 kept at zero; mobile, typography,
+          copy, topology, and navbar untouched. */}
+      <div className="mx-auto grid max-w-6xl items-center gap-8 px-4 pb-12 pt-6 sm:px-6 sm:pt-8 lg:grid-cols-[1.05fr_0.95fr] lg:gap-12 lg:px-8 lg:pb-8 lg:pt-0">
+        <div className="min-w-0 max-w-2xl">
           <p className="eyebrow mb-4">CyberShield / Security Intelligence</p>
           <h1
             id="landing-hero-heading"
