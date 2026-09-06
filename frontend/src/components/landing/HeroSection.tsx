@@ -6,7 +6,7 @@ function HeroVisualFallback() {
   return (
     <div
       aria-hidden="true"
-      className="h-[340px] w-full animate-pulse rounded-xl bg-surface-high/40 sm:h-[440px] lg:h-[540px]"
+      className="h-[340px] w-full animate-pulse rounded-xl bg-surface-high/40 sm:h-[440px] lg:h-[520px]"
     />
   );
 }
