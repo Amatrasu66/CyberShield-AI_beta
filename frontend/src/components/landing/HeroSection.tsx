@@ -18,17 +18,13 @@ export function HeroSection() {
       data-testid="hero-section"
       className="relative overflow-hidden"
     >
-      {/* Phase 7.7 — minimal hero polish. (1) Top spacing: inspected the
-          remaining gap — lg:pt-0 is already zero and .eyebrow carries no
-          top margin, so the perceived distance is the required h-16
-          fixed-navbar spacer in LandingPage.tsx (must stay: removing it
-          would slide the hero under the fixed bar). No padding/spacer
-          change; items-center alignment untouched, no negative margins.
-          (2) Removed the Get Started / Explore Security Tools CTA row so
-          the supporting paragraph ends naturally; no spacer left behind.
-          Topology, typography, copy, and navbar untouched. */}
+      {/* Phase 7.8 — desktop-only text-block nudge. Grid alignment
+          (items-center) and padding (lg:pt-0) proven correct — untouched.
+          lg:-translate-y-4 on the left copy wrapper only lifts the
+          eyebrow/headline/paragraph visually (-16px at lg+) without
+          affecting document flow, topology, or mobile/tablet. */}
       <div className="mx-auto grid max-w-6xl items-center gap-8 px-4 pb-12 pt-6 sm:px-6 sm:pt-8 lg:grid-cols-[1.05fr_0.95fr] lg:gap-12 lg:px-8 lg:pb-16 lg:pt-0">
-        <div className="min-w-0 max-w-2xl">
+        <div className="min-w-0 max-w-2xl lg:-translate-y-4">
           <p className="eyebrow mb-4">CyberShield / Security Intelligence</p>
           <h1
             id="landing-hero-heading"
