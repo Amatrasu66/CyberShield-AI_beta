@@ -151,17 +151,41 @@ export function TopologyField() {
       attributeFilter: ['class'],
     });
 
-    // --- Container-relative sizing: larger sphere (~26% up from 0.475),
-    // still well inside the container so it never touches viewport edges.
+    // --- Container-relative sizing (Phase 7.4): fit the sphere to the
+    // actual canvas via perspective math so it never clips. The old
+    // `min(w,h) * 0.6` was a world-space guess that ignored the camera
+    // projection (visible height = 2 * dist * tan(fov/2) ≈ 750 units):
+    // too small on mobile (408×340 canvas rendered only a ~184px sphere)
+    // and too tight on narrow desktop canvases (sphere crossed the
+    // left/right bounds). Instead, convert a target pixel diameter
+    // (min-dimension × fit fraction, i.e. small safety margin) back to
+    // world units using pixels-per-unit = canvasHeight / visibleHeight,
+    // constrained against BOTH axes. Camera (fov 60, z 650), geometry,
+    // threshold, blending, and rotation are untouched.
     const resize = () => {
       const width = mount.clientWidth || 1;
       const height = mount.clientHeight || 1;
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
       renderer.setSize(width, height, false);
-      // World-space radius proportional to the container so the sphere stays
-      // balanced at any breakpoint. 0.60 ≈ +26% over the Phase 7.2 value.
-      const radius = Math.min(width, height) * 0.6;
+      // Fraction of the smaller canvas dimension the sphere may occupy.
+      // Leaves a small safety margin around the circumference while
+      // keeping the sphere as large as practical. Mobile uses a touch
+      // more margin since pointer tilt + DPR rounding bite harder there.
+      const fitFraction = width < 640 ? 0.84 : 0.88;
+      const usablePixels = Math.min(width, height) * fitFraction;
+      const vFov = THREE.MathUtils.degToRad(camera.fov);
+      const dist = camera.position.z;
+      const visibleHeight = 2 * dist * Math.tan(vFov / 2);
+      const visibleWidth = visibleHeight * camera.aspect;
+      // World radius that maps to usablePixels/2 on screen, limited by
+      // the tighter of the two axes so nothing clips horizontally or
+      // vertically. NODE_WORLD_PADDING reserves room for the largest
+      // pulsing node halo so node edges never touch the canvas bounds.
+      const NODE_WORLD_PADDING = 8;
+      const fromHeight = (usablePixels / 2) * (visibleHeight / height);
+      const fromWidth = (usablePixels / 2) * (visibleWidth / width);
+      const radius = Math.max(1, Math.min(fromHeight, fromWidth) - NODE_WORLD_PADDING);
       group.scale.set(radius, radius, radius);
       group.position.set(0, 0, 0);
     };

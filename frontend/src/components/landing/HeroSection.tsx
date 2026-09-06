@@ -22,10 +22,16 @@ export function HeroSection() {
       data-testid="hero-section"
       className="relative overflow-hidden"
     >
-      {/* Phase 7.3 — tightened top spacing so the hero sits closer to the
-          navbar while retaining premium editorial whitespace. No spacer hack:
-          the fixed navbar reserves a constant h-16 via LandingPage. */}
-      <div className="mx-auto grid max-w-6xl items-center gap-10 px-4 pb-14 pt-10 sm:px-6 sm:pt-12 lg:grid-cols-[1.05fr_0.95fr] lg:gap-12 lg:px-8 lg:pb-20 lg:pt-14">
+      {/* Phase 7.4 — top-whitespace correction. Cause: the fixed-navbar
+          spacer (h-16 = 64px, correct — keep) stacked with the hero inner
+          top padding (pt-10 / sm:pt-12 / lg:pt-14 = 40/48/56px), producing
+          104–120px of empty space before the eyebrow. On desktop the
+          items-center centering of the copy column against the 600px visual
+          pushed the headline down further. Fix: reduce the inner top
+          padding only (spacer untouched, no negative margins), keep
+          items-center so the two columns stay vertically balanced, and
+          keep bottom padding slightly larger than top for balance. */}
+      <div className="mx-auto grid max-w-6xl items-center gap-8 px-4 pb-12 pt-6 sm:px-6 sm:pt-8 lg:grid-cols-[1.05fr_0.95fr] lg:gap-12 lg:px-8 lg:pb-16 lg:pt-10">
         <div className="min-w-0 max-w-2xl">
           <p className="eyebrow mb-4">CyberShield / Security Intelligence</p>
           <h1
